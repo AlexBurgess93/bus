@@ -115,5 +115,57 @@ function convertShapes() {
   console.log(`Converted ${Object.keys(shapes).length} shapes`);
 }
 
+function convertRoutes() {
+  const { headers, rows } = readGTFSFile("routes.txt");
+
+  const routeIdIndex = headers.indexOf("route_id");
+  const shortNameIndex = headers.indexOf("route_short_name");
+  const longNameIndex = headers.indexOf("route_long_name");
+
+  const routes = [];
+
+  rows.forEach(cols => {
+    routes.push({
+      id: cols[routeIdIndex],
+      shortName: cols[shortNameIndex],
+      longName: cols[longNameIndex]
+    });
+  });
+
+  const outputPath = path.join(processedDir, "routes.json");
+  fs.writeFileSync(outputPath, JSON.stringify(routes));
+
+  console.log(`Converted ${routes.length} routes`);
+}
+
+function convertTrips() {
+  const { headers, rows } = readGTFSFile("trips.txt");
+
+  const routeIdIndex = headers.indexOf("route_id");
+  const serviceIdIndex = headers.indexOf("service_id");
+  const tripIdIndex = headers.indexOf("trip_id");
+  const headsignIndex = headers.indexOf("trip_headsign");
+  const shapeIdIndex = headers.indexOf("shape_id");
+
+  const trips = [];
+
+  rows.forEach(cols => {
+    trips.push({
+      routeId: cols[routeIdIndex],
+      serviceId: cols[serviceIdIndex],
+      tripId: cols[tripIdIndex],
+      headsign: cols[headsignIndex],
+      shapeId: cols[shapeIdIndex]
+    });
+  });
+
+  const outputPath = path.join(processedDir, "trips.json");
+  fs.writeFileSync(outputPath, JSON.stringify(trips));
+
+  console.log(`Converted ${trips.length} trips`);
+}
+
 convertStops();
 convertShapes();
+convertRoutes();
+convertTrips();
