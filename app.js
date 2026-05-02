@@ -71,4 +71,6 @@ async function loadStops() {
   console.log(`Loaded ${loadedCount} stops`);
 }
 
-loadStops();
+loadStops().catch(error => {
+  console.error("Failed to load stops:", error);
+});
