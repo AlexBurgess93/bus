@@ -645,14 +645,54 @@ function formatMinutesAway(arrivalSeconds, currentSeconds) {
 function getUpcomingForStop(stopId, minutesAhead = 30) {
   const currentSeconds = getCurrentSecondsPrecise();
   const maxSeconds = currentSeconds + minutesAhead * 60;
+  const duplicateWindowSeconds = 120;
 
   const upcoming = stopUpcoming[stopId] || [];
 
-  return upcoming
+  const timeValidItems = upcoming
     .filter(item => {
       const arrivalSeconds = timeToSeconds(item.arrivalTime);
       return arrivalSeconds >= currentSeconds && arrivalSeconds <= maxSeconds;
     })
+    .sort((a, b) => timeToSeconds(a.arrivalTime) - timeToSeconds(b.arrivalTime));
+
+  const uniqueByTrip = [];
+  const seenTripIds = new Set();
+
+  timeValidItems.forEach(item => {
+    if (seenTripIds.has(item.tripId)) return;
+    seenTripIds.add(item.tripId);
+    uniqueByTrip.push(item);
+  });
+
+  const deduped = [];
+
+  uniqueByTrip.forEach(item => {
+    const arrivalSeconds = timeToSeconds(item.arrivalTime);
+
+    const duplicateIndex = deduped.findIndex(existing => {
+      const existingArrivalSeconds = timeToSeconds(existing.arrivalTime);
+      const sameRoute = existing.routeShortName === item.routeShortName;
+      const sameDestination = existing.headsign === item.headsign;
+      const sameShape = existing.shapeId === item.shapeId;
+      const closeArrival = Math.abs(existingArrivalSeconds - arrivalSeconds) <= duplicateWindowSeconds;
+
+      return sameRoute && sameDestination && sameShape && closeArrival;
+    });
+
+    if (duplicateIndex === -1) {
+      deduped.push(item);
+      return;
+    }
+
+    const existingArrivalSeconds = timeToSeconds(deduped[duplicateIndex].arrivalTime);
+
+    if (arrivalSeconds < existingArrivalSeconds) {
+      deduped[duplicateIndex] = item;
+    }
+  });
+
+  return deduped
     .sort((a, b) => timeToSeconds(a.arrivalTime) - timeToSeconds(b.arrivalTime))
     .slice(0, 8);
 }
