@@ -512,6 +512,14 @@ map.on("click", () => {
   clearBusFocus();
 });
 
+const resetViewButton = document.getElementById("resetViewButton");
+
+resetViewButton.addEventListener("click", event => {
+  event.stopPropagation();
+  clearBusFocus();
+  map.closePopup();
+});
+
 async function init() {
   await loadCoreData();
   await loadStops();

@@ -81,3 +81,23 @@ main {
   margin-top: 8px;
   color: #6b7280;
 }
+
+.reset-view-button {
+  position: absolute;
+  top: 96px;
+  right: 16px;
+  z-index: 1000;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 999px;
+  background: #111827;
+  color: white;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+}
+
+.reset-view-button:active {
+  transform: scale(0.97);
+}
