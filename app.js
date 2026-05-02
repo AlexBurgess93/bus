@@ -19,15 +19,44 @@ let currentRouteLine = null;
 let selectedTripId = null;
 let selectedStopId = null;
 let highlightedTripIds = new Set();
-
 let allShapes = {};
 let allRoutes = [];
 let allTrips = [];
 let timetableTrips = [];
 let stopUpcoming = {};
 let stopLookup = {};
-
 let busMarkersByTripId = {};
+let stopRouteLines = [];
+
+function clearStopRouteLines() {
+  stopRouteLines.forEach(line => {
+    map.removeLayer(line);
+  });
+
+  stopRouteLines = [];
+}
+
+function drawStopUpcomingPaths(upcomingItems) {
+  clearStopRouteLines();
+
+  const uniqueShapeIds = [...new Set(upcomingItems.map(item => item.shapeId))];
+
+  uniqueShapeIds.forEach(shapeId => {
+    const shapeCoords = allShapes[shapeId];
+
+    if (!shapeCoords) return;
+
+    const line = L.polyline(shapeCoords, {
+      color: "#2563eb",
+      weight: 4,
+      opacity: 0.55
+    }).addTo(map);
+
+    line.bringToBack();
+
+    stopRouteLines.push(line);
+  });
+}
 
 function timeToSeconds(timeString) {
   const [hours, minutes, seconds] = timeString.split(":").map(Number);
@@ -217,6 +246,7 @@ function clearBusFocus() {
   });
 
   clearRouteLine();
+  clearStopRouteLines();
 }
 
 function formatMinutesAway(arrivalSeconds, currentSeconds) {
@@ -318,6 +348,7 @@ async function loadStops() {
       const upcoming = getUpcomingForStop(stop.id, 30);
 
       focusTripsForStop(stop.id, upcoming);
+      drawStopUpcomingPaths(upcoming);
 
       const upcomingHTML = upcoming.length
         ? upcoming.map(item => {
