@@ -7,7 +7,6 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: "&copy; OpenStreetMap contributors"
 }).addTo(map);
 
-// Simple CSV parser that handles quoted commas
 function parseCSVLine(line) {
   const result = [];
   let current = "";
@@ -19,30 +18,47 @@ function parseCSVLine(line) {
     if (char === '"') {
       insideQuotes = !insideQuotes;
     } else if (char === "," && !insideQuotes) {
-      result.push(current);
+      result.push(current.trim());
       current = "";
     } else {
       current += char;
     }
   }
 
-  result.push(current);
+  result.push(current.trim());
   return result;
 }
 
 async function loadStops() {
-  const response = await fetch("data/raw/stops.txt");
-  const text = await response.text();
+  console.log("Starting stop load...");
 
-  const lines = text.trim().split("\n");
-  const headers = parseCSVLine(lines[0]);
+  const response = await fetch("data/raw/stops.txt");
+  console.log("Fetch status:", response.status);
+
+  const text = await response.text();
+  console.log("File length:", text.length);
+  console.log("First 300 chars:", text.slice(0, 300));
+
+  const lines = text.trim().split(/\r?\n/);
+  console.log("Line count:", lines.length);
+
+  const headers = parseCSVLine(lines[0]).map(h => h.replace("\uFEFF", ""));
+  console.log("Headers:", headers);
 
   const stopIdIndex = headers.indexOf("stop_id");
   const nameIndex = headers.indexOf("stop_name");
   const latIndex = headers.indexOf("stop_lat");
   const lonIndex = headers.indexOf("stop_lon");
 
+  console.log({
+    stopIdIndex,
+    nameIndex,
+    latIndex,
+    lonIndex
+  });
+
   let loadedCount = 0;
+  let skippedCount = 0;
 
   for (let i = 1; i < lines.length; i++) {
     const cols = parseCSVLine(lines[i]);
@@ -54,9 +70,9 @@ async function loadStops() {
 
     if (!isNaN(lat) && !isNaN(lon)) {
       L.circleMarker([lat, lon], {
-        radius: 3,
+        radius: 4,
         weight: 1,
-        fillOpacity: 0.7
+        fillOpacity: 0.8
       })
         .addTo(map)
         .bindPopup(`
@@ -65,10 +81,13 @@ async function loadStops() {
         `);
 
       loadedCount++;
+    } else {
+      skippedCount++;
     }
   }
 
-  console.log(`Loaded ${loadedCount} stops`);
+  console.log("Loaded stops:", loadedCount);
+  console.log("Skipped rows:", skippedCount);
 }
 
 loadStops().catch(error => {
