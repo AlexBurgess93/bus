@@ -10,24 +10,45 @@ L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
 let currentRouteLine = null;
 
 async function loadStops() {
-  console.log("Loading stops JSON...");
+  console.log("Loading stops + stop routes...");
 
-  const response = await fetch("data/processed/stops.json");
-  const stops = await response.json();
+  const [stopsRes, stopRoutesRes] = await Promise.all([
+    fetch("data/processed/stops.json"),
+    fetch("data/processed/stop-routes.json")
+  ]);
+
+  const stops = await stopsRes.json();
+  const stopRoutes = await stopRoutesRes.json();
 
   console.log("Stops loaded:", stops.length);
 
+  // Define your "useful routes"
+  const usefulRoutes = ["950", "960", "998", "999"]; // edit this later
+  const excludedRoutes = ["27"]; // optional
+
   stops.forEach(stop => {
+    const routes = stopRoutes[stop.id] || [];
+
+    const useful = routes.filter(r => usefulRoutes.includes(r));
+    const notUseful = routes.filter(r => !usefulRoutes.includes(r));
+
+    const popupHTML = `
+      <strong>${stop.name}</strong><br>
+      Stop ID: ${stop.id}<br><br>
+
+      <strong>Routes:</strong> ${routes.join(", ") || "None"}<br><br>
+
+      <strong style="color:green;">Useful:</strong> ${useful.join(", ") || "-"}<br>
+      <strong style="color:gray;">Other:</strong> ${notUseful.join(", ") || "-"}
+    `;
+
     L.circleMarker([stop.lat, stop.lon], {
       radius: 4,
       weight: 1,
       fillOpacity: 0.8
     })
       .addTo(map)
-      .bindPopup(`
-        <strong>${stop.name}</strong><br>
-        Stop ID: ${stop.id}
-      `);
+      .bindPopup(popupHTML);
   });
 }
 
