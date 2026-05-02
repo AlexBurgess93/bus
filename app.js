@@ -35,7 +35,6 @@ let selectedPanelType = null;
 let activeTripIdsGlobal = new Set();
 let serviceDayOffsetSeconds = 0;
 let busUpdateTimerId = null;
-let busUpdateTimerId = null;
 let hasWarnedAboutNoActiveTrips = false;
 
 const selectionPanel = document.getElementById("selectionPanel");
