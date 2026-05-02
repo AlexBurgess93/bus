@@ -210,11 +210,17 @@ function getShapeSegmentBetweenPositions(shapeCoords, positionA, positionB) {
 
   const segment = shapeCoords.slice(startIndex, endIndex + 1);
 
+  // Do not fall back to a direct "as the crow flies" connector.
+  // If the two positions collapse to the same/single closest shape point,
+  // there is not enough route geometry to draw a meaningful route-following segment.
   if (segment.length < 2) {
-    return [positionA, positionB];
+    return [];
   }
 
-  return [positionA, ...segment, positionB];
+  // Keep the highlight locked to the route shape.
+  // The live/scheduled marker positions are already interpolated from the same shape,
+  // so this uses the actual route geometry instead of drawing a straight connector.
+  return segment;
 }
 
 function drawGhostRouteSegmentForTrip(tripId) {

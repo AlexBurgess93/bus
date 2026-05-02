@@ -355,8 +355,8 @@ main {
 
 .beta-mode-control {
   position: absolute;
-  right: 14px;
-  bottom: calc(clamp(118px, 18vh, 164px) + 14px);
+  bottom: 56px;
+  right: 12px;
   z-index: 900;
   display: grid;
   gap: 7px;
