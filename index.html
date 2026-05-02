@@ -19,7 +19,16 @@
   <main>
     <div id="map"></div>
 
-    <a class="beta-link-button" href="beta.html" aria-label="Open beta mode">Beta</a>
+    <a class="beta-link-button" href="beta.html" aria-label="Open beta version">Beta</a>
+
+    <div class="beta-mode-control" aria-label="Tracking display mode">
+      <div class="beta-mode-title">Tracking mode</div>
+      <div class="beta-segmented-control" role="group" aria-label="Choose tracking mode">
+        <button class="beta-mode-button is-active" type="button" data-beta-mode="live">Live</button>
+        <button class="beta-mode-button" type="button" data-beta-mode="scheduled">Scheduled</button>
+        <button class="beta-mode-button" type="button" data-beta-mode="ghost">Ghost</button>
+      </div>
+    </div>
 
     <aside id="selectionPanel" class="selection-panel" aria-live="polite">
       <button id="closeSelectionPanelButton" class="panel-close-button" type="button" aria-label="Clear selection">

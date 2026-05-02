@@ -38,6 +38,12 @@ let simulatedCurrentSecondsOverride = null;
 let busUpdateTimerId = null;
 let hasWarnedAboutNoActiveTrips = false;
 
+let betaTrackingMode = "live";
+let liveBusMarkersByTripId = {};
+let selectedBusVariant = "live";
+
+const betaModeButtons = document.querySelectorAll(".beta-mode-button");
+
 // Set this to false if you only ever want true real-time behaviour.
 // When true, the prototype still shows buses if the current clock time has no active trips in the processed dataset.
 const KEEP_PROTOTYPE_VISIBLE_WHEN_NO_REAL_TIME_BUSES = true;
@@ -136,7 +142,35 @@ function renderStopPanel(stop, upcomingItems) {
   showSelectionPanel();
 }
 
-function renderBusPanel(trip) {
+function getStableLiveDelaySeconds(tripId) {
+  // Deterministic fake live-data offset for the beta demo.
+  // Positive = live bus is behind schedule. Negative = live bus is ahead.
+  let hash = 0;
+
+  String(tripId).split("").forEach(char => {
+    hash = ((hash << 5) - hash) + char.charCodeAt(0);
+    hash |= 0;
+  });
+
+  const bucket = Math.abs(hash) % 7;
+  const offsets = [-150, -90, -35, 0, 45, 105, 165];
+
+  return offsets[bucket];
+}
+
+function getDelayStatus(delaySeconds) {
+  if (delaySeconds <= -60) {
+    return { label: "Ahead", className: "ahead", text: `${Math.abs(Math.round(delaySeconds / 60))} min ahead` };
+  }
+
+  if (delaySeconds >= 60) {
+    return { label: "Behind", className: "behind", text: `${Math.round(delaySeconds / 60)} min behind` };
+  }
+
+  return { label: "On time", className: "on-time", text: "on time" };
+}
+
+function renderBusPanel(trip, variant = selectedBusVariant) {
   selectedPanelType = "bus";
 
   const latestPosition = latestTripPositionsByTripId[trip.tripId];
@@ -144,14 +178,22 @@ function renderBusPanel(trip) {
     ? `${latestPosition.stopA?.name || "Unknown stop"} → ${latestPosition.stopB?.name || "Unknown stop"}`
     : "Between stops unavailable";
 
+  const delaySeconds = getStableLiveDelaySeconds(trip.tripId);
+  const delayStatus = getDelayStatus(delaySeconds);
+  const variantLabel = variant === "scheduled" ? "Scheduled position" : "Simulated live position";
+
   selectionPanelContent.innerHTML = `
     <section class="panel-section bus-panel-section">
       <div class="bus-summary-row">
         <div class="route-badge">${escapeHTML(trip.routeShortName)}</div>
 
         <div class="panel-text-stack">
-          <div class="panel-subtitle">Destination</div>
+          <div class="panel-subtitle">${escapeHTML(variantLabel)}</div>
           <div class="panel-title">${escapeHTML(trip.headsign)}</div>
+        </div>
+
+        <div class="beta-delay-chip ${escapeHTML(delayStatus.className)}">
+          ${escapeHTML(delayStatus.text)}
         </div>
       </div>
 
@@ -672,16 +714,72 @@ function interpolateAlongShape(shapeCoords, stopA, stopB, progress) {
   ];
 }
 
-function createBusIcon(isSelected = false) {
+function createBusIcon(isSelected = false, variant = "scheduled", delayClass = "on-time") {
+  const classes = ["bus-icon"];
+
+  if (isSelected) classes.push("selected");
+  if (variant === "live") classes.push("live-bus-icon", delayClass);
+  if (variant === "scheduled") classes.push("scheduled-bus-icon");
+
+  const label = variant === "live" ? "L" : "S";
+
   return L.divIcon({
     className: "",
     html: `
-      <div class="${isSelected ? "bus-icon selected" : "bus-icon"}">
-        🚌
+      <div class="${classes.join(" ")}">
+        <span class="bus-emoji">🚌</span>
+        <span class="bus-mode-label">${label}</span>
       </div>
     `,
-    iconSize: [30, 30],
-    iconAnchor: [15, 15]
+    iconSize: [32, 32],
+    iconAnchor: [16, 16]
+  });
+}
+
+function setMarkerVisible(marker, visible) {
+  if (!marker) return;
+
+  marker.setOpacity(visible ? 1 : 0);
+
+  const element = marker.getElement?.();
+  if (element) {
+    element.style.pointerEvents = visible ? "auto" : "none";
+  }
+}
+
+function getScheduledMarkerOpacity(tripId) {
+  if (betaTrackingMode === "live") return 0;
+  if (selectedTripId && tripId !== selectedTripId) return 0.15;
+  if (selectedStopId && !highlightedTripIds.has(tripId)) return 0.15;
+  return betaTrackingMode === "ghost" ? 0.72 : 1;
+}
+
+function getLiveMarkerOpacity(tripId) {
+  if (betaTrackingMode === "scheduled") return 0;
+  if (selectedTripId && tripId !== selectedTripId) return 0.15;
+  if (selectedStopId && !highlightedTripIds.has(tripId)) return 0.15;
+  return 1;
+}
+
+function applyBetaMarkerVisibility() {
+  Object.keys(busMarkersByTripId).forEach(tripId => {
+    const marker = busMarkersByTripId[tripId];
+    marker.setOpacity(getScheduledMarkerOpacity(tripId));
+
+    const element = marker.getElement?.();
+    if (element) {
+      element.style.pointerEvents = betaTrackingMode === "live" ? "none" : "auto";
+    }
+  });
+
+  Object.keys(liveBusMarkersByTripId).forEach(tripId => {
+    const marker = liveBusMarkersByTripId[tripId];
+    marker.setOpacity(getLiveMarkerOpacity(tripId));
+
+    const element = marker.getElement?.();
+    if (element) {
+      element.style.pointerEvents = betaTrackingMode === "scheduled" ? "none" : "auto";
+    }
   });
 }
 
@@ -712,9 +810,10 @@ function drawSpecificTripShape(trip) {
   drawTripShapeByShapeId(trip.shapeId);
 }
 
-function focusSelectedBus(tripId) {
+function focusSelectedBus(tripId, variant = selectedBusVariant) {
   selectedTripId = tripId;
   selectedStopId = null;
+  selectedBusVariant = variant;
   highlightedTripIds = new Set([tripId]);
 
   clearStopRouteLines();
@@ -722,17 +821,22 @@ function focusSelectedBus(tripId) {
 
   Object.keys(busMarkersByTripId).forEach(id => {
     const marker = busMarkersByTripId[id];
+    const isSelected = id === selectedTripId && variant === "scheduled";
 
-    if (id === selectedTripId) {
-      marker.setOpacity(1);
-      marker.setIcon(createBusIcon(true));
-      marker.setZIndexOffset(1200);
-    } else {
-      marker.setOpacity(0.15);
-      marker.setIcon(createBusIcon(false));
-      marker.setZIndexOffset(0);
-    }
+    marker.setIcon(createBusIcon(isSelected, "scheduled"));
+    marker.setZIndexOffset(isSelected ? 1200 : 500);
   });
+
+  Object.keys(liveBusMarkersByTripId).forEach(id => {
+    const marker = liveBusMarkersByTripId[id];
+    const delayClass = getDelayStatus(getStableLiveDelaySeconds(id)).className;
+    const isSelected = id === selectedTripId && variant === "live";
+
+    marker.setIcon(createBusIcon(isSelected, "live", delayClass));
+    marker.setZIndexOffset(isSelected ? 1300 : 700);
+  });
+
+  applyBetaMarkerVisibility();
 
   if (currentRouteLine) {
     currentRouteLine.bringToBack();
@@ -746,55 +850,45 @@ function focusTripsForStop(stopId, upcomingItems) {
 
   Object.keys(busMarkersByTripId).forEach(tripId => {
     const marker = busMarkersByTripId[tripId];
-
-    if (highlightedTripIds.has(tripId)) {
-      marker.setOpacity(1);
-      marker.setIcon(createBusIcon(true));
-      marker.setZIndexOffset(1000);
-    } else {
-      marker.setOpacity(0.15);
-      marker.setIcon(createBusIcon(false));
-      marker.setZIndexOffset(0);
-    }
+    marker.setIcon(createBusIcon(highlightedTripIds.has(tripId), "scheduled"));
+    marker.setZIndexOffset(highlightedTripIds.has(tripId) ? 1000 : 500);
   });
+
+  Object.keys(liveBusMarkersByTripId).forEach(tripId => {
+    const marker = liveBusMarkersByTripId[tripId];
+    const delayClass = getDelayStatus(getStableLiveDelaySeconds(tripId)).className;
+    marker.setIcon(createBusIcon(highlightedTripIds.has(tripId), "live", delayClass));
+    marker.setZIndexOffset(highlightedTripIds.has(tripId) ? 1100 : 700);
+  });
+
+  applyBetaMarkerVisibility();
 }
 
 function focusSingleTrip(tripId) {
-  selectedTripId = tripId;
-  selectedStopId = null;
-  highlightedTripIds = new Set([tripId]);
-
-  clearStopRouteLines();
-  highlightFutureStopMarkersForTrip(tripId);
-
-  Object.keys(busMarkersByTripId).forEach(id => {
-    const marker = busMarkersByTripId[id];
-
-    if (id === tripId) {
-      marker.setOpacity(1);
-      marker.setIcon(createBusIcon(true));
-      marker.setZIndexOffset(1200);
-    } else {
-      marker.setOpacity(0.15);
-      marker.setIcon(createBusIcon(false));
-      marker.setZIndexOffset(0);
-    }
-  });
+  selectedBusVariant = betaTrackingMode === "scheduled" ? "scheduled" : "live";
+  focusSelectedBus(tripId, selectedBusVariant);
 }
 
 function clearBusFocus() {
   selectedTripId = null;
   selectedStopId = null;
+  selectedBusVariant = betaTrackingMode === "scheduled" ? "scheduled" : "live";
   highlightedTripIds = new Set();
 
   Object.keys(busMarkersByTripId).forEach(id => {
     const marker = busMarkersByTripId[id];
-
-    marker.setOpacity(1);
-    marker.setIcon(createBusIcon(false));
+    marker.setIcon(createBusIcon(false, "scheduled"));
     marker.setZIndexOffset(500);
   });
 
+  Object.keys(liveBusMarkersByTripId).forEach(id => {
+    const marker = liveBusMarkersByTripId[id];
+    const delayClass = getDelayStatus(getStableLiveDelaySeconds(id)).className;
+    marker.setIcon(createBusIcon(false, "live", delayClass));
+    marker.setZIndexOffset(700);
+  });
+
+  applyBetaMarkerVisibility();
   clearRouteLine();
   clearStopRouteLines();
   resetStopMarkerStyles();
@@ -991,42 +1085,18 @@ function updateBusPositionsLive() {
   const activeTripIds = new Set();
 
   timetableTrips.forEach(trip => {
-    const tripPosition = getTripPositionNow(trip, currentSeconds);
+    const scheduledPosition = getTripPositionNow(trip, currentSeconds);
 
-    if (!tripPosition) return;
+    if (!scheduledPosition) return;
 
     activeTripIds.add(trip.tripId);
-    latestTripPositionsByTripId[trip.tripId] = tripPosition;
+    latestTripPositionsByTripId[trip.tripId] = scheduledPosition;
 
     if (busMarkersByTripId[trip.tripId]) {
-      const marker = busMarkersByTripId[trip.tripId];
-
-      marker.setLatLng(tripPosition.position);
-
-      if (selectedTripId === trip.tripId) {
-        marker.setOpacity(1);
-        marker.setIcon(createBusIcon(true));
-        marker.setZIndexOffset(1200);
-
-        if (selectedPanelType === "bus") {
-          renderBusPanel(trip);
-        }
-      } else if (highlightedTripIds.has(trip.tripId)) {
-        marker.setOpacity(1);
-        marker.setIcon(createBusIcon(true));
-        marker.setZIndexOffset(1000);
-      } else if (selectedTripId || selectedStopId) {
-        marker.setOpacity(0.15);
-        marker.setIcon(createBusIcon(false));
-        marker.setZIndexOffset(0);
-      } else {
-        marker.setOpacity(1);
-        marker.setIcon(createBusIcon(false));
-        marker.setZIndexOffset(500);
-      }
+      busMarkersByTripId[trip.tripId].setLatLng(scheduledPosition.position);
     } else {
-      const marker = L.marker(tripPosition.position, {
-        icon: createBusIcon(false),
+      const marker = L.marker(scheduledPosition.position, {
+        icon: createBusIcon(false, "scheduled"),
         zIndexOffset: 500
       }).addTo(map);
 
@@ -1034,11 +1104,38 @@ function updateBusPositionsLive() {
         stopLeafletEvent(event);
 
         drawSpecificTripShape(trip);
-        focusSelectedBus(trip.tripId);
-        renderBusPanel(trip);
+        focusSelectedBus(trip.tripId, "scheduled");
+        renderBusPanel(trip, "scheduled");
       });
 
       busMarkersByTripId[trip.tripId] = marker;
+    }
+
+    const delaySeconds = getStableLiveDelaySeconds(trip.tripId);
+    const livePosition = getTripPositionNow(trip, currentSeconds - delaySeconds) || scheduledPosition;
+    const delayClass = getDelayStatus(delaySeconds).className;
+
+    if (liveBusMarkersByTripId[trip.tripId]) {
+      liveBusMarkersByTripId[trip.tripId].setLatLng(livePosition.position);
+    } else {
+      const marker = L.marker(livePosition.position, {
+        icon: createBusIcon(false, "live", delayClass),
+        zIndexOffset: 700
+      }).addTo(map);
+
+      marker.on("click", event => {
+        stopLeafletEvent(event);
+
+        drawSpecificTripShape(trip);
+        focusSelectedBus(trip.tripId, "live");
+        renderBusPanel(trip, "live");
+      });
+
+      liveBusMarkersByTripId[trip.tripId] = marker;
+    }
+
+    if (selectedTripId === trip.tripId && selectedPanelType === "bus") {
+      renderBusPanel(trip, selectedBusVariant);
     }
   });
 
@@ -1050,6 +1147,16 @@ function updateBusPositionsLive() {
     }
   });
 
+  Object.keys(liveBusMarkersByTripId).forEach(tripId => {
+    if (!activeTripIds.has(tripId)) {
+      map.removeLayer(liveBusMarkersByTripId[tripId]);
+      delete liveBusMarkersByTripId[tripId];
+    }
+  });
+
+  activeTripIdsGlobal = activeTripIds;
+  applyBetaMarkerVisibility();
+
   if (activeTripIds.size > 0) {
     hasWarnedAboutNoActiveTrips = false;
   } else if (!hasWarnedAboutNoActiveTrips) {
@@ -1060,6 +1167,34 @@ function updateBusPositionsLive() {
     hasWarnedAboutNoActiveTrips = true;
   }
 }
+
+function setBetaTrackingMode(mode) {
+  betaTrackingMode = mode;
+
+  betaModeButtons.forEach(button => {
+    button.classList.toggle("is-active", button.dataset.betaMode === mode);
+  });
+
+  if (mode === "scheduled") {
+    selectedBusVariant = "scheduled";
+  } else if (selectedBusVariant === "scheduled") {
+    selectedBusVariant = "live";
+  }
+
+  if (selectedTripId) {
+    focusSelectedBus(selectedTripId, selectedBusVariant);
+  } else {
+    applyBetaMarkerVisibility();
+  }
+}
+
+betaModeButtons.forEach(button => {
+  button.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    setBetaTrackingMode(button.dataset.betaMode);
+  });
+});
 
 map.on("zoomend", () => {
   // Only restyle all stops when there is no active selection.
@@ -1099,6 +1234,7 @@ async function init() {
 
   map.invalidateSize();
   updateBusPositionsLive();
+  setBetaTrackingMode("live");
 
   busUpdateTimerId = window.setInterval(() => {
     updateBusPositionsLive();

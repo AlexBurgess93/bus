@@ -517,6 +517,7 @@ main {
   }
 }
 
+/* Mobile map cleanup: pinch-to-zoom is better than Leaflet's buttons here. */
 @media (max-width: 640px) {
   .leaflet-control-zoom {
     display: none;
