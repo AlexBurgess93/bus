@@ -16,7 +16,7 @@ const USEFUL_ROUTES = [
 ];
 
 let currentRouteLine = null;
-let busMarkers = [];
+let busMarkersByTripId = {};
 let allShapes = {};
 let allRoutes = [];
 let allTrips = [];
@@ -198,7 +198,7 @@ async function drawRouteByShortName(routeShortName) {
 }
 
 async function loadFakeBuses(stops) {
-  console.log("Loading fake buses...");
+  console.log("Updating fake buses...");
 
   const tripsRes = await fetch("data/processed/trip-stop-times.json");
   const trips = await tripsRes.json();
@@ -206,10 +206,7 @@ async function loadFakeBuses(stops) {
   const stopLookup = createStopLookup(stops);
   const currentSeconds = getCurrentSeconds();
 
-  busMarkers.forEach(marker => map.removeLayer(marker));
-  busMarkers = [];
-
-  const activeBuses = [];
+  const activeTripIds = new Set();
 
   trips.forEach(trip => {
     const firstStopTime = timeToSeconds(trip.stops[0].departureTime);
@@ -242,44 +239,52 @@ async function loadFakeBuses(stops) {
           progress
         );
 
-        activeBuses.push({
-          trip,
-          position,
-          stopA,
-          stopB
-        });
+        activeTripIds.add(trip.tripId);
+
+        const popupHTML = `
+          <strong>Route ${trip.routeShortName}</strong><br>
+          ${trip.routeLongName}<br>
+          Destination: ${trip.headsign}<br><br>
+          Between:<br>
+          ${stopA.name}<br>
+          → ${stopB.name}
+        `;
+
+        if (busMarkersByTripId[trip.tripId]) {
+          busMarkersByTripId[trip.tripId]
+            .setLatLng(position)
+            .setPopupContent(popupHTML);
+        } else {
+          const marker = L.circleMarker(position, {
+            radius: 8,
+            weight: 2,
+            fillOpacity: 1,
+            color: "black",
+            fillColor: "orange"
+          })
+            .addTo(map)
+            .bindPopup(popupHTML);
+
+          marker.on("click", () => {
+            drawSpecificTripShape(trip);
+          });
+
+          busMarkersByTripId[trip.tripId] = marker;
+        }
 
         return;
       }
     }
   });
 
-  console.log("Active fake buses:", activeBuses.length);
-
-  activeBuses.forEach(bus => {
-    const marker = L.circleMarker(bus.position, {
-      radius: 8,
-      weight: 2,
-      fillOpacity: 1,
-      color: "black",
-      fillColor: "orange"
-    })
-      .addTo(map)
-      .bindPopup(`
-        <strong>Route ${bus.trip.routeShortName}</strong><br>
-        ${bus.trip.routeLongName}<br>
-        Destination: ${bus.trip.headsign}<br><br>
-        Between:<br>
-        ${bus.stopA.name}<br>
-        → ${bus.stopB.name}
-      `);
-
-    marker.on("click", () => {
-      drawSpecificTripShape(bus.trip);
-    });
-
-    busMarkers.push(marker);
+  Object.keys(busMarkersByTripId).forEach(tripId => {
+    if (!activeTripIds.has(tripId)) {
+      map.removeLayer(busMarkersByTripId[tripId]);
+      delete busMarkersByTripId[tripId];
+    }
   });
+
+  console.log("Active fake buses:", activeTripIds.size);
 }
 
 function drawSpecificTripShape(trip) {
@@ -315,7 +320,7 @@ async function init() {
 
   setInterval(() => {
     loadFakeBuses(stops);
-  }, 30000);
+  }, 5000);
 }
 
 init().catch(err => console.error(err));
