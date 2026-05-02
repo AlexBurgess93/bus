@@ -165,7 +165,64 @@ function convertTrips() {
   console.log(`Converted ${trips.length} trips`);
 }
 
+function convertStopRoutes() {
+  const routesData = readGTFSFile("routes.txt");
+  const tripsData = readGTFSFile("trips.txt");
+  const stopTimesData = readGTFSFile("stop_times.txt");
+
+  const routeIdIndex = routesData.headers.indexOf("route_id");
+  const shortNameIndex = routesData.headers.indexOf("route_short_name");
+
+  const tripIdIndex = tripsData.headers.indexOf("trip_id");
+  const tripRouteIdIndex = tripsData.headers.indexOf("route_id");
+
+  const stopTimesTripIdIndex = stopTimesData.headers.indexOf("trip_id");
+  const stopIdIndex = stopTimesData.headers.indexOf("stop_id");
+
+  const routeIdToShortName = {};
+  routesData.rows.forEach(cols => {
+    routeIdToShortName[cols[routeIdIndex]] = cols[shortNameIndex];
+  });
+
+  const tripIdToRouteShortName = {};
+  tripsData.rows.forEach(cols => {
+    const tripId = cols[tripIdIndex];
+    const routeId = cols[tripRouteIdIndex];
+    tripIdToRouteShortName[tripId] = routeIdToShortName[routeId];
+  });
+
+  const stopRoutes = {};
+
+  stopTimesData.rows.forEach(cols => {
+    const tripId = cols[stopTimesTripIdIndex];
+    const stopId = cols[stopIdIndex];
+    const routeShortName = tripIdToRouteShortName[tripId];
+
+    if (!stopId || !routeShortName) return;
+
+    if (!stopRoutes[stopId]) {
+      stopRoutes[stopId] = new Set();
+    }
+
+    stopRoutes[stopId].add(routeShortName);
+  });
+
+  const cleanStopRoutes = {};
+
+  Object.keys(stopRoutes).forEach(stopId => {
+    cleanStopRoutes[stopId] = Array.from(stopRoutes[stopId]).sort((a, b) => {
+      return Number(a) - Number(b);
+    });
+  });
+
+  const outputPath = path.join(processedDir, "stop-routes.json");
+  fs.writeFileSync(outputPath, JSON.stringify(cleanStopRoutes));
+
+  console.log(`Converted route lists for ${Object.keys(cleanStopRoutes).length} stops`);
+}
+
 convertStops();
 convertShapes();
 convertRoutes();
 convertTrips();
+convertStopRoutes();
