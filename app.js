@@ -32,6 +32,8 @@ let stopMarkersByStopId = {};
 let stopRouteLines = [];
 let latestTripPositionsByTripId = {};
 let selectedPanelType = null;
+let busUpdateTimerId = null;
+let hasWarnedAboutNoActiveTrips = false;
 
 const selectionPanel = document.getElementById("selectionPanel");
 const selectionPanelContent = document.getElementById("selectionPanelContent");
@@ -871,7 +873,14 @@ function updateBusPositionsLive() {
     }
   });
 
-  requestAnimationFrame(updateBusPositionsLive);
+  if (activeTripIds.size > 0) {
+    hasWarnedAboutNoActiveTrips = false;
+  } else if (!hasWarnedAboutNoActiveTrips) {
+    console.warn(
+      "No active timetable trips found for the current device time. Stops can still render while buses are empty if no trip is active right now."
+    );
+    hasWarnedAboutNoActiveTrips = true;
+  }
 }
 
 map.on("click", () => {
@@ -900,7 +909,11 @@ async function init() {
   await loadCoreData();
   await loadStops();
 
-  requestAnimationFrame(updateBusPositionsLive);
+  updateBusPositionsLive();
+
+  busUpdateTimerId = window.setInterval(() => {
+    updateBusPositionsLive();
+  }, 1000);
 }
 
 init().catch(err => console.error(err));
