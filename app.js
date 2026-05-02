@@ -29,11 +29,6 @@ async function loadStops() {
   });
 }
 
-async function init() {
-  await loadStops();
-  await loadShapes();
-}
-
 init().catch(err => console.error(err));
 
 async function loadShapes() {
@@ -59,4 +54,9 @@ async function loadShapes() {
 
   // Zoom map to fit the route
   map.fitBounds(polyline.getBounds());
+}
+
+async function init() {
+  await loadStops();
+  await loadShapes();
 }
