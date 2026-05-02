@@ -144,6 +144,114 @@ function highlightRelevantStopMarkers(selectedStopId, upcomingItems) {
   });
 }
 
+
+function getFutureStopDetailsForTrip(tripId) {
+  const trip = timetableTrips.find(item => item.tripId === tripId);
+
+  if (!trip || !trip.stops || trip.stops.length === 0) {
+    return {
+      trip: null,
+      futureStopIds: new Set(),
+      nextStopId: null
+    };
+  }
+
+  const currentSeconds = getCurrentSecondsPrecise();
+  const firstDepartureSeconds = timeToSeconds(trip.stops[0].departureTime);
+  const lastArrivalSeconds = timeToSeconds(trip.stops[trip.stops.length - 1].arrivalTime);
+
+  if (currentSeconds > lastArrivalSeconds) {
+    return {
+      trip,
+      futureStopIds: new Set(),
+      nextStopId: null
+    };
+  }
+
+  let firstFutureStopIndex = 0;
+
+  if (currentSeconds >= firstDepartureSeconds) {
+    firstFutureStopIndex = trip.stops.findIndex(stopTime => {
+      const arrivalSeconds = timeToSeconds(stopTime.arrivalTime);
+      const departureSeconds = timeToSeconds(stopTime.departureTime);
+
+      return arrivalSeconds >= currentSeconds || departureSeconds >= currentSeconds;
+    });
+
+    if (firstFutureStopIndex === -1) {
+      return {
+        trip,
+        futureStopIds: new Set(),
+        nextStopId: null
+      };
+    }
+
+    const firstFutureStop = trip.stops[firstFutureStopIndex];
+    const firstFutureDepartureSeconds = timeToSeconds(firstFutureStop.departureTime);
+
+    // If the bus has already departed this stop, the relevant passenger-facing
+    // stops start from the next stop onward.
+    if (currentSeconds > firstFutureDepartureSeconds) {
+      firstFutureStopIndex += 1;
+    }
+  }
+
+  const futureStopIds = new Set();
+
+  for (let i = firstFutureStopIndex; i < trip.stops.length; i++) {
+    futureStopIds.add(trip.stops[i].stopId);
+  }
+
+  return {
+    trip,
+    futureStopIds,
+    nextStopId: trip.stops[firstFutureStopIndex]?.stopId || null
+  };
+}
+
+function highlightFutureStopMarkersForTrip(tripId) {
+  const { futureStopIds, nextStopId } = getFutureStopDetailsForTrip(tripId);
+
+  Object.keys(stopMarkersByStopId).forEach(stopId => {
+    const marker = stopMarkersByStopId[stopId];
+
+    if (stopId === nextStopId) {
+      marker.setStyle({
+        radius: 7,
+        color: '#92400e',
+        weight: 3,
+        fillColor: '#f59e0b',
+        fillOpacity: 1,
+        opacity: 1
+      });
+      marker.bringToFront();
+      return;
+    }
+
+    if (futureStopIds.has(stopId)) {
+      marker.setStyle({
+        radius: 5,
+        color: '#111827',
+        weight: 2,
+        fillColor: '#ffffff',
+        fillOpacity: 1,
+        opacity: 1
+      });
+      marker.bringToFront();
+      return;
+    }
+
+    marker.setStyle({
+      radius: 3,
+      color: '#cbd5e1',
+      weight: 1,
+      fillColor: '#e5e7eb',
+      fillOpacity: 0.08,
+      opacity: 0.12
+    });
+  });
+}
+
 function clearStopRouteLines() {
   stopRouteLines.forEach(line => {
     map.removeLayer(line);
@@ -292,7 +400,7 @@ function focusSelectedBus(tripId) {
   // A bus selection should behave like its own clean selection state.
   // This removes any previous stop-selection path/stops view.
   clearStopRouteLines();
-  resetStopMarkerStyles();
+  highlightFutureStopMarkersForTrip(tripId);
 
   Object.keys(busMarkersByTripId).forEach(id => {
     const marker = busMarkersByTripId[id];
@@ -340,7 +448,7 @@ function focusSingleTrip(tripId) {
 
   // Selecting a specific upcoming trip should leave the stop view cleanly.
   clearStopRouteLines();
-  resetStopMarkerStyles();
+  highlightFutureStopMarkersForTrip(tripId);
 
   Object.keys(busMarkersByTripId).forEach(id => {
     const marker = busMarkersByTripId[id];
