@@ -32,8 +32,6 @@ let stopMarkersByStopId = {};
 let stopRouteLines = [];
 let latestTripPositionsByTripId = {};
 let selectedPanelType = null;
-let busUpdateTimerId = null;
-let hasWarnedAboutNoActiveTrips = false;
 
 const selectionPanel = document.getElementById("selectionPanel");
 const selectionPanelContent = document.getElementById("selectionPanelContent");
@@ -647,54 +645,14 @@ function formatMinutesAway(arrivalSeconds, currentSeconds) {
 function getUpcomingForStop(stopId, minutesAhead = 30) {
   const currentSeconds = getCurrentSecondsPrecise();
   const maxSeconds = currentSeconds + minutesAhead * 60;
-  const duplicateWindowSeconds = 120;
 
   const upcoming = stopUpcoming[stopId] || [];
 
-  const timeValidItems = upcoming
+  return upcoming
     .filter(item => {
       const arrivalSeconds = timeToSeconds(item.arrivalTime);
       return arrivalSeconds >= currentSeconds && arrivalSeconds <= maxSeconds;
     })
-    .sort((a, b) => timeToSeconds(a.arrivalTime) - timeToSeconds(b.arrivalTime));
-
-  const uniqueByTrip = [];
-  const seenTripIds = new Set();
-
-  timeValidItems.forEach(item => {
-    if (seenTripIds.has(item.tripId)) return;
-    seenTripIds.add(item.tripId);
-    uniqueByTrip.push(item);
-  });
-
-  const deduped = [];
-
-  uniqueByTrip.forEach(item => {
-    const arrivalSeconds = timeToSeconds(item.arrivalTime);
-
-    const duplicateIndex = deduped.findIndex(existing => {
-      const existingArrivalSeconds = timeToSeconds(existing.arrivalTime);
-      const sameRoute = existing.routeShortName === item.routeShortName;
-      const sameDestination = existing.headsign === item.headsign;
-      const sameShape = existing.shapeId === item.shapeId;
-      const closeArrival = Math.abs(existingArrivalSeconds - arrivalSeconds) <= duplicateWindowSeconds;
-
-      return sameRoute && sameDestination && sameShape && closeArrival;
-    });
-
-    if (duplicateIndex === -1) {
-      deduped.push(item);
-      return;
-    }
-
-    const existingArrivalSeconds = timeToSeconds(deduped[duplicateIndex].arrivalTime);
-
-    if (arrivalSeconds < existingArrivalSeconds) {
-      deduped[duplicateIndex] = item;
-    }
-  });
-
-  return deduped
     .sort((a, b) => timeToSeconds(a.arrivalTime) - timeToSeconds(b.arrivalTime))
     .slice(0, 8);
 }
@@ -873,14 +831,7 @@ function updateBusPositionsLive() {
     }
   });
 
-  if (activeTripIds.size > 0) {
-    hasWarnedAboutNoActiveTrips = false;
-  } else if (!hasWarnedAboutNoActiveTrips) {
-    console.warn(
-      "No active timetable trips found for the current device time. Stops can still render while buses are empty if no trip is active right now."
-    );
-    hasWarnedAboutNoActiveTrips = true;
-  }
+  requestAnimationFrame(updateBusPositionsLive);
 }
 
 map.on("click", () => {
@@ -909,11 +860,7 @@ async function init() {
   await loadCoreData();
   await loadStops();
 
-  updateBusPositionsLive();
-
-  busUpdateTimerId = window.setInterval(() => {
-    updateBusPositionsLive();
-  }, 1000);
+  requestAnimationFrame(updateBusPositionsLive);
 }
 
 init().catch(err => console.error(err));

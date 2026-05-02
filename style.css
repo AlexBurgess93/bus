@@ -15,17 +15,28 @@ body {
   overflow: hidden;
 }
 
+header {
+  padding: 16px;
+  background: #111827;
+  color: white;
+}
+
+header h1 {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+
+header p {
+  margin: 0;
+  color: #cbd5e1;
+}
 
 main {
   position: relative;
   display: flex;
   flex-direction: column;
-  width: 100%;
-  height: 100vh;
-  height: 100dvh;
+  height: calc(100vh - 76px);
   min-height: 0;
-  padding-top: env(safe-area-inset-top);
-  background: #f8fafc;
 }
 
 #map {
@@ -271,6 +282,21 @@ main {
 }
 
 @media (max-width: 640px) {
+  header {
+    padding: 12px 14px;
+  }
+
+  header h1 {
+    font-size: 18px;
+  }
+
+  header p {
+    font-size: 12px;
+  }
+
+  main {
+    height: calc(100vh - 61px);
+  }
 
   .selection-panel {
     flex-basis: min(20vh, 146px);
