@@ -332,9 +332,56 @@ function convertTripStopTimes() {
   console.log(`Converted stop times for ${trips.length} trips`);
 }
 
+function convertUpcomingStopTrips() {
+  const tripStopTimesPath = path.join(processedDir, "trip-stop-times.json");
+  const trips = JSON.parse(fs.readFileSync(tripStopTimesPath, "utf8"));
+
+  const stopUpcoming = {};
+
+  trips.forEach(trip => {
+    trip.stops.forEach(stopTime => {
+      const stopId = stopTime.stopId;
+
+      if (!stopUpcoming[stopId]) {
+        stopUpcoming[stopId] = [];
+      }
+
+      stopUpcoming[stopId].push({
+        tripId: trip.tripId,
+        routeShortName: trip.routeShortName,
+        routeLongName: trip.routeLongName,
+        headsign: trip.headsign,
+        shapeId: trip.shapeId,
+        arrivalTime: stopTime.arrivalTime,
+        departureTime: stopTime.departureTime,
+        stopSequence: stopTime.sequence
+      });
+    });
+  });
+
+  Object.keys(stopUpcoming).forEach(stopId => {
+    stopUpcoming[stopId].sort((a, b) => {
+      return timeStringToSeconds(a.arrivalTime) - timeStringToSeconds(b.arrivalTime);
+    });
+  });
+
+  fs.writeFileSync(
+    path.join(processedDir, "stop-upcoming.json"),
+    JSON.stringify(stopUpcoming)
+  );
+
+  console.log(`Converted upcoming trip lookup for ${Object.keys(stopUpcoming).length} stops`);
+}
+
+function timeStringToSeconds(timeString) {
+  const [hours, minutes, seconds] = timeString.split(":").map(Number);
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
 convertStops();
 convertShapes();
 convertRoutes();
 convertTrips();
 convertStopRoutes();
 convertTripStopTimes();
+convertUpcomingStopTrips();
