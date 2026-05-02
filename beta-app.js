@@ -40,6 +40,8 @@ let hasWarnedAboutNoActiveTrips = false;
 
 let betaTrackingMode = "live";
 let liveBusMarkersByTripId = {};
+let latestLiveTripPositionsByTripId = {};
+let ghostRouteSegmentLine = null;
 let selectedBusVariant = "live";
 
 const betaModeButtons = document.querySelectorAll(".beta-mode-button");
@@ -168,6 +170,88 @@ function getDelayStatus(delaySeconds) {
   }
 
   return { label: "On time", className: "on-time", text: "on time" };
+}
+
+function getDelayColour(delaySeconds) {
+  const status = getDelayStatus(delaySeconds);
+
+  if (status.className === "ahead") return "#16a34a";
+  if (status.className === "behind") return "#f59e0b";
+  return "#2563eb";
+}
+
+function getRoutePathColour() {
+  return betaTrackingMode === "ghost" ? "#111827" : "#f59e0b";
+}
+
+function getRoutePathOpacity() {
+  return betaTrackingMode === "ghost" ? 0.78 : 0.92;
+}
+
+function clearGhostRouteSegmentLine() {
+  if (ghostRouteSegmentLine) {
+    map.removeLayer(ghostRouteSegmentLine);
+    ghostRouteSegmentLine = null;
+  }
+}
+
+function getShapeSegmentBetweenPositions(shapeCoords, positionA, positionB) {
+  if (!shapeCoords || shapeCoords.length < 2 || !positionA || !positionB) {
+    return [];
+  }
+
+  const pointA = { lat: positionA[0], lon: positionA[1] };
+  const pointB = { lat: positionB[0], lon: positionB[1] };
+
+  const indexA = findClosestShapeIndex(shapeCoords, pointA);
+  const indexB = findClosestShapeIndex(shapeCoords, pointB);
+  const startIndex = Math.min(indexA, indexB);
+  const endIndex = Math.max(indexA, indexB);
+
+  const segment = shapeCoords.slice(startIndex, endIndex + 1);
+
+  if (segment.length < 2) {
+    return [positionA, positionB];
+  }
+
+  return [positionA, ...segment, positionB];
+}
+
+function drawGhostRouteSegmentForTrip(tripId) {
+  clearGhostRouteSegmentLine();
+
+  if (betaTrackingMode !== "ghost" || !tripId) return;
+
+  const trip = timetableTrips.find(item => item.tripId === tripId);
+  if (!trip) return;
+
+  const scheduledPosition = latestTripPositionsByTripId[tripId];
+  const livePosition = latestLiveTripPositionsByTripId[tripId];
+  const shapeCoords = allShapes[trip.shapeId];
+
+  if (!scheduledPosition?.position || !livePosition?.position || !shapeCoords) return;
+
+  const delaySeconds = getStableLiveDelaySeconds(tripId);
+  const segmentCoords = getShapeSegmentBetweenPositions(
+    shapeCoords,
+    scheduledPosition.position,
+    livePosition.position
+  );
+
+  if (segmentCoords.length < 2) return;
+
+  ghostRouteSegmentLine = L.polyline(segmentCoords, {
+    color: getDelayColour(delaySeconds),
+    weight: 7,
+    opacity: 0.95,
+    lineCap: "round",
+    lineJoin: "round"
+  }).addTo(map);
+
+  ghostRouteSegmentLine.bringToFront();
+
+  if (busMarkersByTripId[tripId]) busMarkersByTripId[tripId].setZIndexOffset(1200);
+  if (liveBusMarkersByTripId[tripId]) liveBusMarkersByTripId[tripId].setZIndexOffset(1300);
 }
 
 function renderBusPanel(trip, variant = selectedBusVariant) {
@@ -788,6 +872,8 @@ function clearRouteLine() {
     map.removeLayer(currentRouteLine);
     currentRouteLine = null;
   }
+
+  clearGhostRouteSegmentLine();
 }
 
 function drawTripShapeByShapeId(shapeId) {
@@ -798,9 +884,11 @@ function drawTripShapeByShapeId(shapeId) {
   clearRouteLine();
 
   currentRouteLine = L.polyline(shapeCoords, {
-    color: "#f59e0b",
+    color: getRoutePathColour(),
     weight: 5,
-    opacity: 0.92
+    opacity: getRoutePathOpacity(),
+    lineCap: "round",
+    lineJoin: "round"
   }).addTo(map);
 
   currentRouteLine.bringToBack();
@@ -837,8 +925,13 @@ function focusSelectedBus(tripId, variant = selectedBusVariant) {
   });
 
   applyBetaMarkerVisibility();
+  drawGhostRouteSegmentForTrip(tripId);
 
   if (currentRouteLine) {
+    currentRouteLine.setStyle({
+      color: getRoutePathColour(),
+      opacity: getRoutePathOpacity()
+    });
     currentRouteLine.bringToBack();
   }
 }
@@ -1113,6 +1206,7 @@ function updateBusPositionsLive() {
 
     const delaySeconds = getStableLiveDelaySeconds(trip.tripId);
     const livePosition = getTripPositionNow(trip, currentSeconds - delaySeconds) || scheduledPosition;
+    latestLiveTripPositionsByTripId[trip.tripId] = livePosition;
     const delayClass = getDelayStatus(delaySeconds).className;
 
     if (liveBusMarkersByTripId[trip.tripId]) {
@@ -1151,8 +1245,13 @@ function updateBusPositionsLive() {
     if (!activeTripIds.has(tripId)) {
       map.removeLayer(liveBusMarkersByTripId[tripId]);
       delete liveBusMarkersByTripId[tripId];
+      delete latestLiveTripPositionsByTripId[tripId];
     }
   });
+
+  if (selectedTripId) {
+    drawGhostRouteSegmentForTrip(selectedTripId);
+  }
 
   activeTripIdsGlobal = activeTripIds;
   applyBetaMarkerVisibility();
@@ -1181,9 +1280,17 @@ function setBetaTrackingMode(mode) {
     selectedBusVariant = "live";
   }
 
+  if (currentRouteLine) {
+    currentRouteLine.setStyle({
+      color: getRoutePathColour(),
+      opacity: getRoutePathOpacity()
+    });
+  }
+
   if (selectedTripId) {
     focusSelectedBus(selectedTripId, selectedBusVariant);
   } else {
+    clearGhostRouteSegmentLine();
     applyBetaMarkerVisibility();
   }
 }
