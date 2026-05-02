@@ -516,3 +516,9 @@ main {
     font-size: 10px;
   }
 }
+
+@media (max-width: 640px) {
+  .leaflet-control-zoom {
+    display: none;
+  }
+}
