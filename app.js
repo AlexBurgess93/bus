@@ -28,8 +28,12 @@ let stopLookup = {};
 let busMarkersByTripId = {};
 let stopMarkersByStopId = {};
 let stopRouteLines = [];
-let isResettingAppView = false;
-let suppressNextPopupCloseReset = false;
+let latestTripPositionsByTripId = {};
+let currentPanelKey = "";
+
+const selectionPanel = document.getElementById("selectionPanel");
+const selectionPanelContent = document.getElementById("selectionPanelContent");
+const closeSelectionPanelButton = document.getElementById("closeSelectionPanelButton");
 
 
 function getFutureStopIdsForTrips(tripIds) {
@@ -271,7 +275,7 @@ function drawStopUpcomingPaths(upcomingItems) {
     if (!shapeCoords) return;
 
     const line = L.polyline(shapeCoords, {
-      color: "#2563eb",
+      color: "#94a3b8",
       weight: 4,
       opacity: 0.55
     }).addTo(map);
@@ -457,7 +461,6 @@ function focusSingleTrip(tripId) {
       marker.setOpacity(1);
       marker.setIcon(createBusIcon(true));
       marker.setZIndexOffset(1200);
-      marker.openPopup();
     } else {
       marker.setOpacity(0.15);
       marker.setIcon(createBusIcon(false));
@@ -485,25 +488,8 @@ function clearBusFocus() {
 }
 
 function resetAppView() {
-  if (isResettingAppView) return;
-
-  isResettingAppView = true;
   clearBusFocus();
-  map.closePopup();
-  isResettingAppView = false;
-}
-
-function handlePopupClosed() {
-  if (isResettingAppView) return;
-
-  // When changing from a stop popup to a bus popup, Leaflet closes the old popup.
-  // That close is intentional, so do not treat it as the user clearing the view.
-  if (suppressNextPopupCloseReset) {
-    suppressNextPopupCloseReset = false;
-    return;
-  }
-
-  resetAppView();
+  hideSelectionPanel();
 }
 
 function stopLeafletEvent(event) {
@@ -512,13 +498,128 @@ function stopLeafletEvent(event) {
   L.DomEvent.stopPropagation(event);
 
   if (event.originalEvent) {
-    L.DomEvent.stop(event.originalEvent);
+    event.originalEvent.preventDefault?.();
+    event.originalEvent.stopPropagation?.();
   }
 }
 
 function stopBrowserEvent(event) {
   if (!event) return;
   event.stopPropagation();
+}
+
+function escapeHTML(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function showSelectionPanel() {
+  selectionPanel.classList.remove("is-hidden");
+}
+
+function hideSelectionPanel() {
+  currentPanelKey = "";
+  selectionPanel.classList.add("is-hidden");
+  selectionPanelContent.innerHTML = `
+    <div class="panel-empty">
+      Select a stop or bus to see details.
+    </div>
+  `;
+}
+
+function renderStopInfoPanel(stop, upcoming) {
+  currentPanelKey = `stop|${stop.id}|${upcoming.map(item => item.tripId).join(",")}`;
+  const upcomingRows = upcoming.length
+    ? upcoming.map(item => {
+        const minsAway = formatMinutesAway(
+          timeToSeconds(item.arrivalTime),
+          getCurrentSecondsPrecise()
+        );
+
+        return `
+          <button class="ticker-item" type="button" data-shape-id="${escapeHTML(item.shapeId)}" data-trip-id="${escapeHTML(item.tripId)}">
+            <span class="ticker-route">${escapeHTML(item.routeShortName)}</span>
+            <span class="ticker-time">${escapeHTML(minsAway)}</span>
+            <span class="ticker-destination">${escapeHTML(item.headsign)}</span>
+          </button>
+        `;
+      }).join("")
+    : `<div class="ticker-empty">No MVP-route buses in the next 30 mins.</div>`;
+
+  selectionPanelContent.innerHTML = `
+    <section class="panel-section stop-panel">
+      <div class="panel-kicker">Selected stop</div>
+      <div class="panel-title">${escapeHTML(stop.name)}</div>
+      <div class="panel-subtitle">Stop ID: ${escapeHTML(stop.id)}</div>
+
+      <div class="ticker-shell" aria-label="Coming soon buses">
+        <div class="ticker-label">Coming soon</div>
+        <div class="ticker-window">
+          <div class="ticker-track">
+            ${upcomingRows}
+            ${upcoming.length ? upcomingRows : ""}
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+
+  selectionPanelContent.querySelectorAll(".ticker-item").forEach(row => {
+    row.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const shapeId = row.getAttribute("data-shape-id");
+      const tripId = row.getAttribute("data-trip-id");
+      const trip = timetableTrips.find(item => item.tripId === tripId);
+
+      drawTripShapeByShapeId(shapeId);
+      focusSingleTrip(tripId);
+
+      if (trip) {
+        renderBusInfoPanel(trip, latestTripPositionsByTripId[tripId], true);
+      }
+    });
+  });
+
+  showSelectionPanel();
+}
+
+function renderBusInfoPanel(trip, tripPosition, forceRender = false) {
+  const betweenText = tripPosition
+    ? `${tripPosition.stopA.name} → ${tripPosition.stopB.name}`
+    : "Position unavailable";
+
+  const panelKey = `bus|${trip.tripId}|${betweenText}`;
+
+  if (!forceRender && currentPanelKey === panelKey) {
+    return;
+  }
+
+  currentPanelKey = panelKey;
+
+  selectionPanelContent.innerHTML = `
+    <section class="panel-section bus-panel">
+      <div class="panel-kicker">Selected bus</div>
+      <div class="bus-summary-row">
+        <div>
+          <div class="panel-title">Route ${escapeHTML(trip.routeShortName)}</div>
+          <div class="panel-subtitle">Destination: ${escapeHTML(trip.headsign)}</div>
+        </div>
+      </div>
+
+      <div class="between-card">
+        <span class="between-label">Between</span>
+        <span class="between-value">${escapeHTML(betweenText)}</span>
+      </div>
+    </section>
+  `;
+
+  showSelectionPanel();
 }
 
 function formatMinutesAway(arrivalSeconds, currentSeconds) {
@@ -554,7 +655,7 @@ function drawTripShapeByShapeId(shapeId) {
   }
 
   currentRouteLine = L.polyline(shapeCoords, {
-    color: "blue",
+    color: "#f59e0b",
     weight: 5,
     opacity: 0.9
   }).addTo(map);
@@ -625,53 +726,7 @@ async function loadStops() {
       drawStopUpcomingPaths(upcoming);
       highlightRelevantStopMarkers(stop.id, upcoming);
 
-      const upcomingHTML = upcoming.length
-        ? upcoming.map(item => {
-            const minsAway = formatMinutesAway(
-              timeToSeconds(item.arrivalTime),
-              getCurrentSecondsPrecise()
-            );
-
-            return `
-              <div class="upcoming-row" data-shape-id="${item.shapeId}" data-trip-id="${item.tripId}">
-                <strong>${item.routeShortName}</strong>
-                <span>${minsAway}</span><br>
-                <small>${item.headsign}</small>
-              </div>
-            `;
-          }).join("")
-        : `<div class="empty-state">No MVP-route buses in the next 30 mins.</div>`;
-
-      marker.bindPopup(`
-        <strong>${stop.name}</strong><br>
-        <small>Stop ID: ${stop.id}</small><br><br>
-
-        <strong>Coming soon:</strong>
-        <div class="upcoming-list">
-          ${upcomingHTML}
-        </div>
-      `).openPopup();
-
-      setTimeout(() => {
-        document.querySelectorAll(".upcoming-row").forEach(row => {
-          const selectUpcomingTrip = popupEvent => {
-            popupEvent.preventDefault();
-            popupEvent.stopPropagation();
-
-            const shapeId = row.getAttribute("data-shape-id");
-            const tripId = row.getAttribute("data-trip-id");
-
-            suppressNextPopupCloseReset = true;
-            drawTripShapeByShapeId(shapeId);
-            focusSingleTrip(tripId);
-          };
-
-          row.addEventListener("pointerdown", stopBrowserEvent);
-          row.addEventListener("touchstart", stopBrowserEvent, { passive: true });
-
-          row.addEventListener("click", selectUpcomingTrip);
-        });
-      }, 0);
+      renderStopInfoPanel(stop, upcoming);
     });
   });
 }
@@ -686,18 +741,12 @@ function drawSpecificTripShape(trip) {
   }
 
   currentRouteLine = L.polyline(shapeCoords, {
-    color: "blue",
+    color: "#f59e0b",
     weight: 5,
     opacity: 0.9
   }).addTo(map);
 
   currentRouteLine.bringToBack();
-
-  currentRouteLine.bindPopup(`
-    <strong>Route ${trip.routeShortName}</strong><br>
-    ${trip.routeLongName}<br>
-    Destination: ${trip.headsign}
-  `);
 }
 
 function getTripPositionNow(trip, currentSeconds) {
@@ -755,23 +804,16 @@ function updateBusPositionsLive() {
     if (!tripPosition) return;
 
     activeTripIds.add(trip.tripId);
+    latestTripPositionsByTripId[trip.tripId] = tripPosition;
 
-    const popupHTML = `
-      <strong>Route ${trip.routeShortName}</strong><br>
-      ${trip.routeLongName}<br>
-      Destination: ${trip.headsign}<br><br>
-      Between:<br>
-      ${tripPosition.stopA.name}<br>
-      → ${tripPosition.stopB.name}<br><br>
-      Scheduled progress: ${Math.round(tripPosition.progress * 100)}%
-    `;
+    if (selectedTripId === trip.tripId) {
+      renderBusInfoPanel(trip, tripPosition);
+    }
 
     if (busMarkersByTripId[trip.tripId]) {
       const marker = busMarkersByTripId[trip.tripId];
 
-      marker
-        .setLatLng(tripPosition.position)
-        .setPopupContent(popupHTML);
+      marker.setLatLng(tripPosition.position);
 
       if (selectedTripId === trip.tripId) {
         marker.setOpacity(1);
@@ -794,23 +836,16 @@ function updateBusPositionsLive() {
       const marker = L.marker(tripPosition.position, {
         icon: createBusIcon(false),
         zIndexOffset: 500
-      })
-        .addTo(map)
-        .bindPopup(popupHTML);
+      }).addTo(map);
 
       marker.on("click", event => {
         stopLeafletEvent(event);
 
-        // Important mobile fix:
-        // Direct bus taps must NOT suppress the next popup close.
-        // Suppression is only used when moving from a stop popup row into a bus popup,
-        // because Leaflet closes the old stop popup as part of that transition.
         drawSpecificTripShape(trip);
         focusSelectedBus(trip.tripId);
-        marker.openPopup();
+        renderBusInfoPanel(trip, tripPosition, true);
       });
 
-      marker.on("popupclose", handlePopupClosed);
 
       busMarkersByTripId[trip.tripId] = marker;
     }
@@ -835,15 +870,23 @@ map.on("click", () => {
 map.on("touchstart", event => {
   const target = event.originalEvent?.target;
 
-  // Do not reset when the user is touching inside a popup or on a bus/stop marker.
-  if (target?.closest?.(".leaflet-popup, .leaflet-marker-icon, .leaflet-interactive")) {
+  // Do not reset when the user is touching a bus or stop marker.
+  if (target?.closest?.(".leaflet-marker-icon, .leaflet-interactive")) {
     return;
   }
 
   resetAppView();
 });
 
-map.on("popupclose", handlePopupClosed);
+
+closeSelectionPanelButton.addEventListener("click", event => {
+  event.preventDefault();
+  event.stopPropagation();
+  resetAppView();
+});
+
+selectionPanel.addEventListener("click", stopBrowserEvent);
+selectionPanel.addEventListener("touchstart", stopBrowserEvent, { passive: true });
 
 async function init() {
   await loadCoreData();
