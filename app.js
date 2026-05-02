@@ -26,7 +26,86 @@ let timetableTrips = [];
 let stopUpcoming = {};
 let stopLookup = {};
 let busMarkersByTripId = {};
+let stopMarkersByStopId = {};
 let stopRouteLines = [];
+
+
+function getStopIdsForTrips(tripIds) {
+  const relevantStopIds = new Set();
+
+  timetableTrips.forEach(trip => {
+    if (!tripIds.has(trip.tripId)) return;
+
+    trip.stops.forEach(stopTime => {
+      relevantStopIds.add(stopTime.stopId);
+    });
+  });
+
+  return relevantStopIds;
+}
+
+function resetStopMarkerStyles() {
+  Object.keys(stopMarkersByStopId).forEach(stopId => {
+    const marker = stopMarkersByStopId[stopId];
+
+    marker.setStyle({
+      radius: 4,
+      color: '#64748b',
+      weight: 1,
+      fillColor: '#2563eb',
+      fillOpacity: 0.8,
+      opacity: 1
+    });
+
+    marker.bringToFront();
+  });
+}
+
+function highlightRelevantStopMarkers(selectedStopId, upcomingItems) {
+  const tripIds = new Set(upcomingItems.map(item => item.tripId));
+  const relevantStopIds = getStopIdsForTrips(tripIds);
+
+  relevantStopIds.add(selectedStopId);
+
+  Object.keys(stopMarkersByStopId).forEach(stopId => {
+    const marker = stopMarkersByStopId[stopId];
+
+    if (stopId === selectedStopId) {
+      marker.setStyle({
+        radius: 8,
+        color: '#1d4ed8',
+        weight: 3,
+        fillColor: '#2563eb',
+        fillOpacity: 1,
+        opacity: 1
+      });
+      marker.bringToFront();
+      return;
+    }
+
+    if (relevantStopIds.has(stopId)) {
+      marker.setStyle({
+        radius: 5,
+        color: '#111827',
+        weight: 2,
+        fillColor: '#ffffff',
+        fillOpacity: 1,
+        opacity: 1
+      });
+      marker.bringToFront();
+      return;
+    }
+
+    marker.setStyle({
+      radius: 3,
+      color: '#cbd5e1',
+      weight: 1,
+      fillColor: '#e5e7eb',
+      fillOpacity: 0.08,
+      opacity: 0.12
+    });
+  });
+}
 
 function clearStopRouteLines() {
   stopRouteLines.forEach(line => {
@@ -247,6 +326,7 @@ function clearBusFocus() {
 
   clearRouteLine();
   clearStopRouteLines();
+  resetStopMarkerStyles();
 }
 
 function resetAppView() {
@@ -346,14 +426,16 @@ async function loadStops() {
   stops.forEach(stop => {
     const routes = stopRoutes[stop.id] || [];
 
-    const useful = routes.filter(r => USEFUL_ROUTES.includes(r));
-    const other = routes.filter(r => !USEFUL_ROUTES.includes(r));
-
     const marker = L.circleMarker([stop.lat, stop.lon], {
       radius: 4,
+      color: '#64748b',
       weight: 1,
-      fillOpacity: 0.8
+      fillColor: '#2563eb',
+      fillOpacity: 0.8,
+      opacity: 1
     }).addTo(map);
+
+    stopMarkersByStopId[stop.id] = marker;
 
     marker.on("click", event => {
       stopLeafletEvent(event);
@@ -364,6 +446,7 @@ async function loadStops() {
 
       focusTripsForStop(stop.id, upcoming);
       drawStopUpcomingPaths(upcoming);
+      highlightRelevantStopMarkers(stop.id, upcoming);
 
       const upcomingHTML = upcoming.length
         ? upcoming.map(item => {
@@ -384,11 +467,7 @@ async function loadStops() {
 
       marker.bindPopup(`
         <strong>${stop.name}</strong><br>
-        Stop ID: ${stop.id}<br><br>
-
-        <strong>Routes:</strong> ${routes.join(", ") || "None"}<br>
-        <strong style="color:green;">Useful:</strong> ${useful.join(", ") || "-"}<br>
-        <strong style="color:gray;">Other:</strong> ${other.join(", ") || "-"}<br><br>
+        <small>Stop ID: ${stop.id}</small><br><br>
 
         <strong>Coming soon:</strong>
         <div class="upcoming-list">
@@ -572,26 +651,6 @@ map.on("click", () => {
 map.on("touchstart", () => {
   resetAppView();
 });
-
-const resetViewButton = document.getElementById("resetViewButton");
-
-if (resetViewButton) {
-  L.DomEvent.disableClickPropagation(resetViewButton);
-  L.DomEvent.disableScrollPropagation(resetViewButton);
-
-  const handleResetButton = event => {
-    event.preventDefault();
-    event.stopPropagation();
-    resetAppView();
-  };
-
-  resetViewButton.addEventListener("pointerdown", event => {
-    event.stopPropagation();
-  });
-
-  resetViewButton.addEventListener("touchstart", handleResetButton, { passive: false });
-  resetViewButton.addEventListener("click", handleResetButton);
-}
 
 async function init() {
   await loadCoreData();
