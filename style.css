@@ -318,3 +318,201 @@ main {
     font-size: 13px;
   }
 }
+
+.beta-link-button,
+.beta-back-button {
+  position: absolute;
+  right: 14px;
+  z-index: 900;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 62px;
+  height: 36px;
+  padding: 0 13px;
+  border-radius: 999px;
+  background: #111827;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 900;
+  text-decoration: none;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.28);
+  touch-action: manipulation;
+}
+
+.beta-link-button {
+  bottom: calc(clamp(118px, 18vh, 164px) + 14px);
+}
+
+.beta-back-button {
+  top: 14px;
+}
+
+.beta-link-button:active,
+.beta-back-button:active {
+  transform: scale(0.97);
+}
+
+.beta-mode-control {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  z-index: 900;
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.16);
+  backdrop-filter: blur(10px);
+}
+
+.beta-mode-title {
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.beta-segmented-control {
+  display: flex;
+  gap: 4px;
+}
+
+.beta-mode-button {
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.beta-mode-button.is-active {
+  background: #111827;
+  color: #ffffff;
+}
+
+.beta-delay-chip {
+  margin-left: auto;
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.beta-delay-chip.ahead {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+
+.beta-delay-chip.behind {
+  background: #fff7ed;
+  color: #c2410c;
+  border: 1px solid #fed7aa;
+}
+
+.beta-delay-chip.on-time {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.bus-icon {
+  position: relative;
+}
+
+.bus-mode-label {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: #111827;
+  color: #ffffff;
+  border: 1px solid #ffffff;
+  font-size: 9px;
+  font-weight: 950;
+  line-height: 14px;
+  text-align: center;
+}
+
+.scheduled-bus-icon {
+  border-color: #2563eb;
+  background: rgba(255, 255, 255, 0.9);
+  border-style: dashed;
+}
+
+.scheduled-bus-icon .bus-mode-label {
+  background: #2563eb;
+}
+
+.live-bus-icon {
+  border-width: 3px;
+}
+
+.live-bus-icon.ahead {
+  border-color: #10b981;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.45);
+}
+
+.live-bus-icon.behind {
+  border-color: #f97316;
+  box-shadow: 0 4px 14px rgba(249, 115, 22, 0.48);
+}
+
+.live-bus-icon.on-time {
+  border-color: #2563eb;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.42);
+}
+
+.live-bus-icon.ahead .bus-mode-label {
+  background: #047857;
+}
+
+.live-bus-icon.behind .bus-mode-label {
+  background: #c2410c;
+}
+
+.live-bus-icon.on-time .bus-mode-label {
+  background: #1d4ed8;
+}
+
+@media (max-width: 640px) {
+  .beta-link-button {
+    right: 12px;
+    bottom: calc(clamp(112px, 18vh, 146px) + 12px);
+  }
+
+  .beta-back-button {
+    top: 12px;
+    right: 12px;
+  }
+
+  .beta-mode-control {
+    left: 10px;
+    top: 10px;
+    padding: 8px;
+    border-radius: 16px;
+  }
+
+  .beta-mode-button {
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+
+  .beta-delay-chip {
+    padding: 5px 7px;
+    font-size: 10px;
+  }
+}
