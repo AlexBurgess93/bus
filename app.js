@@ -1,6 +1,8 @@
 const perth = [-31.9523, 115.8613];
 
-const map = L.map("map").setView(perth, 11);
+const map = L.map("map", {
+  closePopupOnClick: false
+}).setView(perth, 11);
 
 L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
   maxZoom: 19,
@@ -29,12 +31,133 @@ let busMarkersByTripId = {};
 let stopMarkersByStopId = {};
 let stopRouteLines = [];
 let latestTripPositionsByTripId = {};
-let currentPanelKey = "";
+let selectedPanelType = null;
 
 const selectionPanel = document.getElementById("selectionPanel");
 const selectionPanelContent = document.getElementById("selectionPanelContent");
 const closeSelectionPanelButton = document.getElementById("closeSelectionPanelButton");
 
+function escapeHTML(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function showSelectionPanel() {
+  selectionPanel.classList.remove("is-hidden");
+  setTimeout(() => {
+    map.invalidateSize();
+  }, 0);
+}
+
+function hideSelectionPanel() {
+  selectionPanel.classList.add("is-hidden");
+  selectionPanelContent.innerHTML = `
+    <div class="panel-empty">
+      Select a stop or bus to see details.
+    </div>
+  `;
+  selectedPanelType = null;
+  setTimeout(() => {
+    map.invalidateSize();
+  }, 0);
+}
+
+function renderStopPanel(stop, upcomingItems) {
+  selectedPanelType = "stop";
+
+  const upcomingHTML = upcomingItems.length
+    ? upcomingItems.map(item => {
+        const minsAway = formatMinutesAway(
+          timeToSeconds(item.arrivalTime),
+          getCurrentSecondsPrecise()
+        );
+
+        return `
+          <button
+            class="arrival-pill"
+            type="button"
+            data-shape-id="${escapeHTML(item.shapeId)}"
+            data-trip-id="${escapeHTML(item.tripId)}"
+            aria-label="Select route ${escapeHTML(item.routeShortName)} to ${escapeHTML(item.headsign)}, ${escapeHTML(minsAway)} away"
+          >
+            <span class="arrival-route">${escapeHTML(item.routeShortName)}</span>
+            <span class="arrival-time">${escapeHTML(minsAway)}</span>
+            <span class="arrival-destination">${escapeHTML(item.headsign)}</span>
+          </button>
+        `;
+      }).join("")
+    : `<div class="arrival-empty">No MVP-route buses in the next 30 mins.</div>`;
+
+  selectionPanelContent.innerHTML = `
+    <section class="panel-section stop-panel-section">
+      <div class="panel-main-row">
+        <div class="panel-text-stack">
+          <div class="panel-title">${escapeHTML(stop.name)}</div>
+          <div class="panel-subtitle">Stop ID: ${escapeHTML(stop.id)}</div>
+        </div>
+      </div>
+
+      <div class="arrival-strip" aria-label="Upcoming buses">
+        ${upcomingHTML}
+      </div>
+    </section>
+  `;
+
+  selectionPanelContent.querySelectorAll(".arrival-pill").forEach(button => {
+    const selectUpcomingTrip = event => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const shapeId = button.getAttribute("data-shape-id");
+      const tripId = button.getAttribute("data-trip-id");
+      const trip = timetableTrips.find(item => item.tripId === tripId);
+
+      drawTripShapeByShapeId(shapeId);
+      focusSingleTrip(tripId);
+
+      if (trip) {
+        renderBusPanel(trip);
+      }
+    };
+
+    button.addEventListener("click", selectUpcomingTrip);
+  });
+
+  showSelectionPanel();
+}
+
+function renderBusPanel(trip) {
+  selectedPanelType = "bus";
+
+  const latestPosition = latestTripPositionsByTripId[trip.tripId];
+  const betweenText = latestPosition
+    ? `${latestPosition.stopA.name} → ${latestPosition.stopB.name}`
+    : "Between stops unavailable";
+
+  selectionPanelContent.innerHTML = `
+    <section class="panel-section bus-panel-section">
+      <div class="bus-summary-row">
+        <div class="route-badge">${escapeHTML(trip.routeShortName)}</div>
+
+        <div class="panel-text-stack">
+          <div class="panel-subtitle">Destination</div>
+          <div class="panel-title">${escapeHTML(trip.headsign)}</div>
+        </div>
+      </div>
+
+      <div class="between-card">
+        <div class="between-label">Between</div>
+        <div class="between-value">${escapeHTML(betweenText)}</div>
+      </div>
+    </section>
+  `;
+
+  showSelectionPanel();
+}
 
 function getFutureStopIdsForTrips(tripIds) {
   const futureStopIds = new Set();
@@ -47,7 +170,6 @@ function getFutureStopIdsForTrips(tripIds) {
     const firstDepartureSeconds = timeToSeconds(trip.stops[0].departureTime);
     const lastArrivalSeconds = timeToSeconds(trip.stops[trip.stops.length - 1].arrivalTime);
 
-    // If the trip has not started yet, every stop on that trip is still in the future.
     if (currentSeconds < firstDepartureSeconds) {
       trip.stops.forEach(stopTime => {
         futureStopIds.add(stopTime.stopId);
@@ -55,10 +177,7 @@ function getFutureStopIdsForTrips(tripIds) {
       return;
     }
 
-    // If the trip has already finished, do not show any of its stops.
-    if (currentSeconds > lastArrivalSeconds) {
-      return;
-    }
+    if (currentSeconds > lastArrivalSeconds) return;
 
     let firstFutureStopIndex = trip.stops.findIndex(stopTime => {
       const arrivalSeconds = timeToSeconds(stopTime.arrivalTime);
@@ -69,7 +188,6 @@ function getFutureStopIdsForTrips(tripIds) {
 
     if (firstFutureStopIndex === -1) return;
 
-    // If the bus has already departed this stop, start at the next stop.
     const firstFutureStop = trip.stops[firstFutureStopIndex];
     const firstFutureDepartureSeconds = timeToSeconds(firstFutureStop.departureTime);
 
@@ -91,9 +209,9 @@ function resetStopMarkerStyles() {
 
     marker.setStyle({
       radius: 4,
-      color: '#64748b',
+      color: "#64748b",
       weight: 1,
-      fillColor: '#2563eb',
+      fillColor: "#2563eb",
       fillOpacity: 0.8,
       opacity: 1
     });
@@ -114,9 +232,9 @@ function highlightRelevantStopMarkers(selectedStopId, upcomingItems) {
     if (stopId === selectedStopId) {
       marker.setStyle({
         radius: 8,
-        color: '#1d4ed8',
+        color: "#1d4ed8",
         weight: 3,
-        fillColor: '#2563eb',
+        fillColor: "#2563eb",
         fillOpacity: 1,
         opacity: 1
       });
@@ -127,9 +245,9 @@ function highlightRelevantStopMarkers(selectedStopId, upcomingItems) {
     if (relevantStopIds.has(stopId)) {
       marker.setStyle({
         radius: 5,
-        color: '#111827',
+        color: "#111827",
         weight: 2,
-        fillColor: '#ffffff',
+        fillColor: "#ffffff",
         fillOpacity: 1,
         opacity: 1
       });
@@ -139,15 +257,14 @@ function highlightRelevantStopMarkers(selectedStopId, upcomingItems) {
 
     marker.setStyle({
       radius: 3,
-      color: '#cbd5e1',
+      color: "#cbd5e1",
       weight: 1,
-      fillColor: '#e5e7eb',
+      fillColor: "#e5e7eb",
       fillOpacity: 0.08,
       opacity: 0.12
     });
   });
 }
-
 
 function getFutureStopDetailsForTrip(tripId) {
   const trip = timetableTrips.find(item => item.tripId === tripId);
@@ -193,8 +310,6 @@ function getFutureStopDetailsForTrip(tripId) {
     const firstFutureStop = trip.stops[firstFutureStopIndex];
     const firstFutureDepartureSeconds = timeToSeconds(firstFutureStop.departureTime);
 
-    // If the bus has already departed this stop, the relevant passenger-facing
-    // stops start from the next stop onward.
     if (currentSeconds > firstFutureDepartureSeconds) {
       firstFutureStopIndex += 1;
     }
@@ -222,9 +337,9 @@ function highlightFutureStopMarkersForTrip(tripId) {
     if (stopId === nextStopId) {
       marker.setStyle({
         radius: 7,
-        color: '#92400e',
+        color: "#92400e",
         weight: 3,
-        fillColor: '#f59e0b',
+        fillColor: "#f59e0b",
         fillOpacity: 1,
         opacity: 1
       });
@@ -235,9 +350,9 @@ function highlightFutureStopMarkersForTrip(tripId) {
     if (futureStopIds.has(stopId)) {
       marker.setStyle({
         radius: 5,
-        color: '#111827',
+        color: "#111827",
         weight: 2,
-        fillColor: '#ffffff',
+        fillColor: "#ffffff",
         fillOpacity: 1,
         opacity: 1
       });
@@ -247,9 +362,9 @@ function highlightFutureStopMarkersForTrip(tripId) {
 
     marker.setStyle({
       radius: 3,
-      color: '#cbd5e1',
+      color: "#cbd5e1",
       weight: 1,
-      fillColor: '#e5e7eb',
+      fillColor: "#e5e7eb",
       fillOpacity: 0.08,
       opacity: 0.12
     });
@@ -277,7 +392,7 @@ function drawStopUpcomingPaths(upcomingItems) {
     const line = L.polyline(shapeCoords, {
       color: "#94a3b8",
       weight: 4,
-      opacity: 0.55
+      opacity: 0.58
     }).addTo(map);
 
     line.bringToBack();
@@ -384,8 +499,7 @@ function createBusIcon(isSelected = false) {
       </div>
     `,
     iconSize: [30, 30],
-    iconAnchor: [15, 15],
-    popupAnchor: [0, -15]
+    iconAnchor: [15, 15]
   });
 }
 
@@ -396,13 +510,31 @@ function clearRouteLine() {
   }
 }
 
+function drawTripShapeByShapeId(shapeId) {
+  const shapeCoords = allShapes[shapeId];
+
+  if (!shapeCoords) return;
+
+  clearRouteLine();
+
+  currentRouteLine = L.polyline(shapeCoords, {
+    color: "#f59e0b",
+    weight: 5,
+    opacity: 0.92
+  }).addTo(map);
+
+  currentRouteLine.bringToBack();
+}
+
+function drawSpecificTripShape(trip) {
+  drawTripShapeByShapeId(trip.shapeId);
+}
+
 function focusSelectedBus(tripId) {
   selectedTripId = tripId;
   selectedStopId = null;
   highlightedTripIds = new Set([tripId]);
 
-  // A bus selection should behave like its own clean selection state.
-  // This removes any previous stop-selection path/stops view.
   clearStopRouteLines();
   highlightFutureStopMarkersForTrip(tripId);
 
@@ -450,7 +582,6 @@ function focusSingleTrip(tripId) {
   selectedStopId = null;
   highlightedTripIds = new Set([tripId]);
 
-  // Selecting a specific upcoming trip should leave the stop view cleanly.
   clearStopRouteLines();
   highlightFutureStopMarkersForTrip(tripId);
 
@@ -498,128 +629,8 @@ function stopLeafletEvent(event) {
   L.DomEvent.stopPropagation(event);
 
   if (event.originalEvent) {
-    event.originalEvent.preventDefault?.();
-    event.originalEvent.stopPropagation?.();
+    L.DomEvent.stop(event.originalEvent);
   }
-}
-
-function stopBrowserEvent(event) {
-  if (!event) return;
-  event.stopPropagation();
-}
-
-function escapeHTML(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-function showSelectionPanel() {
-  selectionPanel.classList.remove("is-hidden");
-}
-
-function hideSelectionPanel() {
-  currentPanelKey = "";
-  selectionPanel.classList.add("is-hidden");
-  selectionPanelContent.innerHTML = `
-    <div class="panel-empty">
-      Select a stop or bus to see details.
-    </div>
-  `;
-}
-
-function renderStopInfoPanel(stop, upcoming) {
-  currentPanelKey = `stop|${stop.id}|${upcoming.map(item => item.tripId).join(",")}`;
-  const upcomingRows = upcoming.length
-    ? upcoming.map(item => {
-        const minsAway = formatMinutesAway(
-          timeToSeconds(item.arrivalTime),
-          getCurrentSecondsPrecise()
-        );
-
-        return `
-          <button class="ticker-item" type="button" data-shape-id="${escapeHTML(item.shapeId)}" data-trip-id="${escapeHTML(item.tripId)}">
-            <span class="ticker-route">${escapeHTML(item.routeShortName)}</span>
-            <span class="ticker-time">${escapeHTML(minsAway)}</span>
-            <span class="ticker-destination">${escapeHTML(item.headsign)}</span>
-          </button>
-        `;
-      }).join("")
-    : `<div class="ticker-empty">No MVP-route buses in the next 30 mins.</div>`;
-
-  selectionPanelContent.innerHTML = `
-    <section class="panel-section stop-panel">
-      <div class="panel-kicker">Selected stop</div>
-      <div class="panel-title">${escapeHTML(stop.name)}</div>
-      <div class="panel-subtitle">Stop ID: ${escapeHTML(stop.id)}</div>
-
-      <div class="ticker-shell" aria-label="Coming soon buses">
-        <div class="ticker-label">Coming soon</div>
-        <div class="ticker-window">
-          <div class="ticker-track">
-            ${upcomingRows}
-            ${upcoming.length ? upcomingRows : ""}
-          </div>
-        </div>
-      </div>
-    </section>
-  `;
-
-  selectionPanelContent.querySelectorAll(".ticker-item").forEach(row => {
-    row.addEventListener("click", event => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      const shapeId = row.getAttribute("data-shape-id");
-      const tripId = row.getAttribute("data-trip-id");
-      const trip = timetableTrips.find(item => item.tripId === tripId);
-
-      drawTripShapeByShapeId(shapeId);
-      focusSingleTrip(tripId);
-
-      if (trip) {
-        renderBusInfoPanel(trip, latestTripPositionsByTripId[tripId], true);
-      }
-    });
-  });
-
-  showSelectionPanel();
-}
-
-function renderBusInfoPanel(trip, tripPosition, forceRender = false) {
-  const betweenText = tripPosition
-    ? `${tripPosition.stopA.name} → ${tripPosition.stopB.name}`
-    : "Position unavailable";
-
-  const panelKey = `bus|${trip.tripId}|${betweenText}`;
-
-  if (!forceRender && currentPanelKey === panelKey) {
-    return;
-  }
-
-  currentPanelKey = panelKey;
-
-  selectionPanelContent.innerHTML = `
-    <section class="panel-section bus-panel">
-      <div class="panel-kicker">Selected bus</div>
-      <div class="bus-summary-row">
-        <div>
-          <div class="panel-title">Route ${escapeHTML(trip.routeShortName)}</div>
-          <div class="panel-subtitle">Destination: ${escapeHTML(trip.headsign)}</div>
-        </div>
-      </div>
-
-      <div class="between-card">
-        <span class="between-label">Between</span>
-        <span class="between-value">${escapeHTML(betweenText)}</span>
-      </div>
-    </section>
-  `;
-
-  showSelectionPanel();
 }
 
 function formatMinutesAway(arrivalSeconds, currentSeconds) {
@@ -642,25 +653,8 @@ function getUpcomingForStop(stopId, minutesAhead = 30) {
       const arrivalSeconds = timeToSeconds(item.arrivalTime);
       return arrivalSeconds >= currentSeconds && arrivalSeconds <= maxSeconds;
     })
+    .sort((a, b) => timeToSeconds(a.arrivalTime) - timeToSeconds(b.arrivalTime))
     .slice(0, 8);
-}
-
-function drawTripShapeByShapeId(shapeId) {
-  const shapeCoords = allShapes[shapeId];
-
-  if (!shapeCoords) return;
-
-  if (currentRouteLine) {
-    map.removeLayer(currentRouteLine);
-  }
-
-  currentRouteLine = L.polyline(shapeCoords, {
-    color: "#f59e0b",
-    weight: 5,
-    opacity: 0.9
-  }).addTo(map);
-
-  currentRouteLine.bringToBack();
 }
 
 async function loadCoreData() {
@@ -695,20 +689,18 @@ async function loadStops() {
   ]);
 
   const stops = await stopsRes.json();
-  const stopRoutes = await stopRoutesRes.json();
+  await stopRoutesRes.json();
 
   stopLookup = createStopLookup(stops);
 
   console.log("Stops loaded:", stops.length);
 
   stops.forEach(stop => {
-    const routes = stopRoutes[stop.id] || [];
-
     const marker = L.circleMarker([stop.lat, stop.lon], {
       radius: 4,
-      color: '#64748b',
+      color: "#64748b",
       weight: 1,
-      fillColor: '#2563eb',
+      fillColor: "#2563eb",
       fillOpacity: 0.8,
       opacity: 1
     }).addTo(map);
@@ -725,28 +717,9 @@ async function loadStops() {
       focusTripsForStop(stop.id, upcoming);
       drawStopUpcomingPaths(upcoming);
       highlightRelevantStopMarkers(stop.id, upcoming);
-
-      renderStopInfoPanel(stop, upcoming);
+      renderStopPanel(stop, upcoming);
     });
   });
-}
-
-function drawSpecificTripShape(trip) {
-  const shapeCoords = allShapes[trip.shapeId];
-
-  if (!shapeCoords) return;
-
-  if (currentRouteLine) {
-    map.removeLayer(currentRouteLine);
-  }
-
-  currentRouteLine = L.polyline(shapeCoords, {
-    color: "#f59e0b",
-    weight: 5,
-    opacity: 0.9
-  }).addTo(map);
-
-  currentRouteLine.bringToBack();
 }
 
 function getTripPositionNow(trip, currentSeconds) {
@@ -806,10 +779,6 @@ function updateBusPositionsLive() {
     activeTripIds.add(trip.tripId);
     latestTripPositionsByTripId[trip.tripId] = tripPosition;
 
-    if (selectedTripId === trip.tripId) {
-      renderBusInfoPanel(trip, tripPosition);
-    }
-
     if (busMarkersByTripId[trip.tripId]) {
       const marker = busMarkersByTripId[trip.tripId];
 
@@ -819,6 +788,10 @@ function updateBusPositionsLive() {
         marker.setOpacity(1);
         marker.setIcon(createBusIcon(true));
         marker.setZIndexOffset(1200);
+
+        if (selectedPanelType === "bus") {
+          renderBusPanel(trip);
+        }
       } else if (highlightedTripIds.has(trip.tripId)) {
         marker.setOpacity(1);
         marker.setIcon(createBusIcon(true));
@@ -843,9 +816,8 @@ function updateBusPositionsLive() {
 
         drawSpecificTripShape(trip);
         focusSelectedBus(trip.tripId);
-        renderBusInfoPanel(trip, tripPosition, true);
+        renderBusPanel(trip);
       });
-
 
       busMarkersByTripId[trip.tripId] = marker;
     }
@@ -855,6 +827,7 @@ function updateBusPositionsLive() {
     if (!activeTripIds.has(tripId)) {
       map.removeLayer(busMarkersByTripId[tripId]);
       delete busMarkersByTripId[tripId];
+      delete latestTripPositionsByTripId[tripId];
     }
   });
 
@@ -865,28 +838,23 @@ map.on("click", () => {
   resetAppView();
 });
 
-// Mobile Safari can treat some map taps differently from desktop clicks.
-// This gives the map the same escape behaviour on touch devices.
-map.on("touchstart", event => {
-  const target = event.originalEvent?.target;
-
-  // Do not reset when the user is touching a bus or stop marker.
-  if (target?.closest?.(".leaflet-marker-icon, .leaflet-interactive")) {
-    return;
-  }
-
-  resetAppView();
-});
-
-
 closeSelectionPanelButton.addEventListener("click", event => {
   event.preventDefault();
   event.stopPropagation();
   resetAppView();
 });
 
-selectionPanel.addEventListener("click", stopBrowserEvent);
-selectionPanel.addEventListener("touchstart", stopBrowserEvent, { passive: true });
+closeSelectionPanelButton.addEventListener("touchstart", event => {
+  event.stopPropagation();
+}, { passive: true });
+
+selectionPanel.addEventListener("click", event => {
+  event.stopPropagation();
+});
+
+selectionPanel.addEventListener("touchstart", event => {
+  event.stopPropagation();
+}, { passive: true });
 
 async function init() {
   await loadCoreData();
