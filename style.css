@@ -353,10 +353,41 @@ main {
   transform: scale(0.97);
 }
 
+
+.locate-button {
+  position: absolute;
+  top: 60px;
+  right: 14px;
+  z-index: 900;
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(17, 24, 39, 0.9);
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.28);
+  cursor: pointer;
+  touch-action: manipulation;
+  backdrop-filter: blur(8px);
+}
+
+.locate-button:active {
+  transform: scale(0.96);
+}
+
+.location-panel-section {
+  justify-content: center;
+}
+
 .beta-mode-control {
   position: absolute;
-  bottom: 56px;
-  right: 12px;
+  right: 14px;
+  bottom: calc(clamp(118px, 18vh, 164px) + 14px);
   z-index: 900;
   display: grid;
   gap: 7px;
@@ -499,7 +530,47 @@ main {
     right: 12px;
   }
 
-  .beta-mode-control {
+
+  .locate-button {
+    top: 58px;
+    right: 12px;
+    width: 40px;
+    height: 40px;
+    font-size: 17px;
+  }
+
+  
+.locate-button {
+  position: absolute;
+  top: 60px;
+  right: 14px;
+  z-index: 900;
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(17, 24, 39, 0.9);
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.28);
+  cursor: pointer;
+  touch-action: manipulation;
+  backdrop-filter: blur(8px);
+}
+
+.locate-button:active {
+  transform: scale(0.96);
+}
+
+.location-panel-section {
+  justify-content: center;
+}
+
+.beta-mode-control {
     right: 10px;
     bottom: calc(clamp(112px, 18vh, 146px) + 12px);
     padding: 8px;

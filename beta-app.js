@@ -37,6 +37,7 @@ let serviceDayOffsetSeconds = 0;
 let simulatedCurrentSecondsOverride = null;
 let busUpdateTimerId = null;
 let hasWarnedAboutNoActiveTrips = false;
+let userLocationMarker = null;
 
 let betaTrackingMode = "live";
 let liveBusMarkersByTripId = {};
@@ -53,6 +54,7 @@ const KEEP_PROTOTYPE_VISIBLE_WHEN_NO_REAL_TIME_BUSES = true;
 const selectionPanel = document.getElementById("selectionPanel");
 const selectionPanelContent = document.getElementById("selectionPanelContent");
 const closeSelectionPanelButton = document.getElementById("closeSelectionPanelButton");
+const locateUserButton = document.getElementById("locateUserButton");
 
 function escapeHTML(value) {
   return String(value ?? "")
@@ -210,11 +212,17 @@ function getShapeSegmentBetweenPositions(shapeCoords, positionA, positionB) {
 
   const segment = shapeCoords.slice(startIndex, endIndex + 1);
 
+  // Do not fall back to a direct "as the crow flies" connector.
+  // If the two positions collapse to the same/single closest shape point,
+  // there is not enough route geometry to draw a meaningful route-following segment.
   if (segment.length < 2) {
-    return [positionA, positionB];
+    return [];
   }
 
-  return [positionA, ...segment, positionB];
+  // Keep the highlight locked to the route shape.
+  // The live/scheduled marker positions are already interpolated from the same shape,
+  // so this uses the actual route geometry instead of drawing a straight connector.
+  return segment;
 }
 
 function drawGhostRouteSegmentForTrip(tripId) {
@@ -1066,6 +1074,111 @@ function getUpcomingForStop(stopId, minutesAhead = 30) {
     .slice(0, 8);
 }
 
+
+function findNearestStop(lat, lon) {
+  let closestStop = null;
+  let closestDistance = Infinity;
+
+  Object.values(stopLookup).forEach(stop => {
+    const distance = distanceBetweenPoints(
+      [lat, lon],
+      [stop.lat, stop.lon]
+    );
+
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestStop = stop;
+    }
+  });
+
+  return closestStop;
+}
+
+function showLocationMessage(title, message) {
+  selectionPanelContent.innerHTML = `
+    <section class="panel-section location-panel-section">
+      <div class="panel-main-row">
+        <div class="panel-text-stack">
+          <div class="panel-title">${escapeHTML(title)}</div>
+          <div class="panel-subtitle">${escapeHTML(message)}</div>
+        </div>
+      </div>
+    </section>
+  `;
+
+  showSelectionPanel();
+}
+
+function selectNearestStopFromLocation(lat, lon) {
+  const nearestStop = findNearestStop(lat, lon);
+
+  if (!nearestStop) {
+    showLocationMessage("No nearby stop found", "The app could not find a stop in the current dataset.");
+    return;
+  }
+
+  const upcoming = getUpcomingForStop(nearestStop.id, 30);
+
+  clearBusFocus();
+  focusTripsForStop(nearestStop.id, upcoming);
+  drawStopUpcomingPaths(upcoming);
+  highlightRelevantStopMarkers(nearestStop.id, upcoming);
+  renderStopPanel(nearestStop, upcoming);
+
+  map.setView([nearestStop.lat, nearestStop.lon], Math.max(map.getZoom(), 15), {
+    animate: true
+  });
+}
+
+function updateUserLocationMarker(lat, lon) {
+  if (userLocationMarker) {
+    userLocationMarker.setLatLng([lat, lon]);
+    return;
+  }
+
+  userLocationMarker = L.circleMarker([lat, lon], {
+    radius: 7,
+    color: "#065f46",
+    weight: 3,
+    fillColor: "#22c55e",
+    fillOpacity: 1,
+    opacity: 1
+  }).addTo(map);
+
+  userLocationMarker.bringToFront();
+}
+
+function requestUserLocation() {
+  if (!navigator.geolocation) {
+    showLocationMessage("Location unavailable", "This browser does not support GPS location.");
+    return;
+  }
+
+  showLocationMessage("Finding nearest stop…", "Allow location access when your browser asks.");
+
+  navigator.geolocation.getCurrentPosition(
+    position => {
+      const lat = position.coords.latitude;
+      const lon = position.coords.longitude;
+
+      updateUserLocationMarker(lat, lon);
+      selectNearestStopFromLocation(lat, lon);
+    },
+    error => {
+      const message = error.code === error.PERMISSION_DENIED
+        ? "Location access was denied."
+        : "The app could not get your current location.";
+
+      showLocationMessage("Location not available", message);
+    },
+    {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 30000
+    }
+  );
+}
+
 async function loadCoreData() {
   const [routesRes, tripsRes, shapesRes, timetableRes, stopUpcomingRes] = await Promise.all([
     fetch("data/processed/routes.json"),
@@ -1302,6 +1415,18 @@ betaModeButtons.forEach(button => {
     setBetaTrackingMode(button.dataset.betaMode);
   });
 });
+
+if (locateUserButton) {
+  locateUserButton.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    requestUserLocation();
+  });
+
+  locateUserButton.addEventListener("touchstart", event => {
+    event.stopPropagation();
+  }, { passive: true });
+}
 
 map.on("zoomend", () => {
   // Only restyle all stops when there is no active selection.
