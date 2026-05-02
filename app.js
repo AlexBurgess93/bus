@@ -30,18 +30,53 @@ let stopMarkersByStopId = {};
 let stopRouteLines = [];
 
 
-function getStopIdsForTrips(tripIds) {
-  const relevantStopIds = new Set();
+function getFutureStopIdsForTrips(tripIds) {
+  const futureStopIds = new Set();
+  const currentSeconds = getCurrentSecondsPrecise();
 
   timetableTrips.forEach(trip => {
     if (!tripIds.has(trip.tripId)) return;
+    if (!trip.stops || trip.stops.length === 0) return;
 
-    trip.stops.forEach(stopTime => {
-      relevantStopIds.add(stopTime.stopId);
+    const firstDepartureSeconds = timeToSeconds(trip.stops[0].departureTime);
+    const lastArrivalSeconds = timeToSeconds(trip.stops[trip.stops.length - 1].arrivalTime);
+
+    // If the trip has not started yet, every stop on that trip is still in the future.
+    if (currentSeconds < firstDepartureSeconds) {
+      trip.stops.forEach(stopTime => {
+        futureStopIds.add(stopTime.stopId);
+      });
+      return;
+    }
+
+    // If the trip has already finished, do not show any of its stops.
+    if (currentSeconds > lastArrivalSeconds) {
+      return;
+    }
+
+    let firstFutureStopIndex = trip.stops.findIndex(stopTime => {
+      const arrivalSeconds = timeToSeconds(stopTime.arrivalTime);
+      const departureSeconds = timeToSeconds(stopTime.departureTime);
+
+      return arrivalSeconds >= currentSeconds || departureSeconds >= currentSeconds;
     });
+
+    if (firstFutureStopIndex === -1) return;
+
+    // If the bus has already departed this stop, start at the next stop.
+    const firstFutureStop = trip.stops[firstFutureStopIndex];
+    const firstFutureDepartureSeconds = timeToSeconds(firstFutureStop.departureTime);
+
+    if (currentSeconds > firstFutureDepartureSeconds) {
+      firstFutureStopIndex += 1;
+    }
+
+    for (let i = firstFutureStopIndex; i < trip.stops.length; i++) {
+      futureStopIds.add(trip.stops[i].stopId);
+    }
   });
 
-  return relevantStopIds;
+  return futureStopIds;
 }
 
 function resetStopMarkerStyles() {
@@ -63,7 +98,7 @@ function resetStopMarkerStyles() {
 
 function highlightRelevantStopMarkers(selectedStopId, upcomingItems) {
   const tripIds = new Set(upcomingItems.map(item => item.tripId));
-  const relevantStopIds = getStopIdsForTrips(tripIds);
+  const relevantStopIds = getFutureStopIdsForTrips(tripIds);
 
   relevantStopIds.add(selectedStopId);
 
@@ -562,7 +597,9 @@ function getTripPositionNow(trip, currentSeconds) {
         position,
         stopA,
         stopB,
-        progress
+        progress,
+        segmentIndex: i,
+        nextStopIndex: i + 1
       };
     }
   }
