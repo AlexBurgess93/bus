@@ -163,15 +163,32 @@ function getStableLiveDelaySeconds(tripId) {
 }
 
 function getDelayStatus(delaySeconds) {
+  const roundedMinutes = Math.round(Math.abs(delaySeconds) / 60);
+
   if (delaySeconds <= -60) {
-    return { label: "Ahead", className: "ahead", text: `${Math.abs(Math.round(delaySeconds / 60))} min ahead` };
+    return {
+      label: "Ahead",
+      className: "ahead",
+      text: `-${roundedMinutes} min`,
+      detail: "ahead"
+    };
   }
 
   if (delaySeconds >= 60) {
-    return { label: "Behind", className: "behind", text: `${Math.round(delaySeconds / 60)} min behind` };
+    return {
+      label: "Behind",
+      className: "behind",
+      text: `+${roundedMinutes} min`,
+      detail: "behind"
+    };
   }
 
-  return { label: "On time", className: "on-time", text: "on time" };
+  return {
+    label: "On time",
+    className: "on-time",
+    text: "±0 min",
+    detail: "on time"
+  };
 }
 
 function getDelayColour(delaySeconds) {
@@ -179,7 +196,7 @@ function getDelayColour(delaySeconds) {
 
   if (status.className === "ahead") return "#16a34a";
   if (status.className === "behind") return "#f59e0b";
-  return "#2563eb";
+  return "#6b7280";
 }
 
 function getRoutePathColour() {
@@ -240,6 +257,12 @@ function drawGhostRouteSegmentForTrip(tripId) {
   if (!scheduledPosition?.position || !livePosition?.position || !shapeCoords) return;
 
   const delaySeconds = getStableLiveDelaySeconds(tripId);
+
+  // Avoid visual noise for tiny differences.
+  // Under 30 seconds, the scheduled/live positions are effectively the same for this demo.
+  if (Math.abs(delaySeconds) < 30) return;
+
+  const delayStatus = getDelayStatus(delaySeconds);
   const segmentCoords = getShapeSegmentBetweenPositions(
     shapeCoords,
     scheduledPosition.position,
@@ -250,10 +273,12 @@ function drawGhostRouteSegmentForTrip(tripId) {
 
   ghostRouteSegmentLine = L.polyline(segmentCoords, {
     color: getDelayColour(delaySeconds),
-    weight: 7,
-    opacity: 0.95,
+    weight: 8,
+    opacity: 0.96,
+    dashArray: delayStatus.className === "on-time" ? null : "8 10",
     lineCap: "round",
-    lineJoin: "round"
+    lineJoin: "round",
+    className: `ghost-route-segment ${delayStatus.className}`
   }).addTo(map);
 
   ghostRouteSegmentLine.bringToFront();
@@ -284,8 +309,9 @@ function renderBusPanel(trip, variant = selectedBusVariant) {
           <div class="panel-title">${escapeHTML(trip.headsign)}</div>
         </div>
 
-        <div class="beta-delay-chip ${escapeHTML(delayStatus.className)}">
-          ${escapeHTML(delayStatus.text)}
+        <div class="beta-delay-chip ${escapeHTML(delayStatus.className)}" title="${escapeHTML(delayStatus.detail)}">
+          <span class="delay-value">${escapeHTML(delayStatus.text)}</span>
+          <span class="delay-detail">${escapeHTML(delayStatus.detail)}</span>
         </div>
       </div>
 

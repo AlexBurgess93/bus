@@ -452,9 +452,19 @@ main {
 }
 
 .beta-delay-chip.on-time {
-  background: #eff6ff;
-  color: #1d4ed8;
-  border: 1px solid #bfdbfe;
+  background: #f3f4f6;
+  color: #374151;
+  border: 1px solid #d1d5db;
+}
+
+.beta-delay-chip .delay-value {
+  display: inline-block;
+}
+
+.beta-delay-chip .delay-detail {
+  margin-left: 4px;
+  font-weight: 850;
+  opacity: 0.72;
 }
 
 .bus-icon {
@@ -503,8 +513,8 @@ main {
 }
 
 .live-bus-icon.on-time {
-  border-color: #2563eb;
-  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.42);
+  border-color: #6b7280;
+  box-shadow: 0 3px 10px rgba(107, 114, 128, 0.28);
 }
 
 .live-bus-icon.ahead .bus-mode-label {
@@ -516,7 +526,27 @@ main {
 }
 
 .live-bus-icon.on-time .bus-mode-label {
-  background: #1d4ed8;
+  background: #4b5563;
+}
+
+.ghost-route-segment {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ghost-route-segment.ahead,
+.ghost-route-segment.behind {
+  animation: ghost-dash-flow 1.25s linear infinite;
+}
+
+.ghost-route-segment.on-time {
+  opacity: 0.78;
+}
+
+@keyframes ghost-dash-flow {
+  to {
+    stroke-dashoffset: -36;
+  }
 }
 
 @media (max-width: 640px) {
