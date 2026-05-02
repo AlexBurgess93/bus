@@ -19,14 +19,15 @@
   <main>
     <div id="map"></div>
 
-    <aside id="selectionPanel" class="selection-panel is-hidden" aria-live="polite">
+    <aside id="selectionPanel" class="selection-panel" aria-live="polite">
       <button id="closeSelectionPanelButton" class="panel-close-button" type="button" aria-label="Clear selection">
         ×
       </button>
 
       <div id="selectionPanelContent" class="selection-panel-content">
         <div class="panel-empty">
-          Select a stop or bus to see details.
+          <div class="panel-empty-title">Tap a stop or bus</div>
+          <div class="panel-empty-subtitle">Details will appear here without shifting the map.</div>
         </div>
       </div>
     </aside>

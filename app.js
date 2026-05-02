@@ -56,23 +56,20 @@ function escapeHTML(value) {
 }
 
 function showSelectionPanel() {
-  selectionPanel.classList.remove("is-hidden");
-  setTimeout(() => {
-    map.invalidateSize();
-  }, 0);
+  // The panel is always present in the layout.
+  // This prevents Leaflet from resizing/re-centering the map when content changes.
+  selectionPanel.classList.add("has-selection");
 }
 
 function hideSelectionPanel() {
-  selectionPanel.classList.add("is-hidden");
+  selectionPanel.classList.remove("has-selection");
   selectionPanelContent.innerHTML = `
     <div class="panel-empty">
-      Select a stop or bus to see details.
+      <div class="panel-empty-title">Tap a stop or bus</div>
+      <div class="panel-empty-subtitle">Details will appear here without shifting the map.</div>
     </div>
   `;
   selectedPanelType = null;
-  setTimeout(() => {
-    map.invalidateSize();
-  }, 0);
 }
 
 function renderStopPanel(stop, upcomingItems) {
@@ -1049,9 +1046,12 @@ selectionPanel.addEventListener("touchstart", event => {
 }, { passive: true });
 
 async function init() {
+  hideSelectionPanel();
+
   await loadCoreData();
   await loadStops();
 
+  map.invalidateSize();
   updateBusPositionsLive();
 
   busUpdateTimerId = window.setInterval(() => {
