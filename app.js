@@ -28,6 +28,8 @@ let stopLookup = {};
 let busMarkersByTripId = {};
 let stopMarkersByStopId = {};
 let stopRouteLines = [];
+let isResettingAppView = false;
+let suppressNextPopupCloseReset = false;
 
 
 function getFutureStopIdsForTrips(tripIds) {
@@ -287,6 +289,11 @@ function focusSelectedBus(tripId) {
   selectedStopId = null;
   highlightedTripIds = new Set([tripId]);
 
+  // A bus selection should behave like its own clean selection state.
+  // This removes any previous stop-selection path/stops view.
+  clearStopRouteLines();
+  resetStopMarkerStyles();
+
   Object.keys(busMarkersByTripId).forEach(id => {
     const marker = busMarkersByTripId[id];
 
@@ -328,7 +335,12 @@ function focusTripsForStop(stopId, upcomingItems) {
 
 function focusSingleTrip(tripId) {
   selectedTripId = tripId;
+  selectedStopId = null;
   highlightedTripIds = new Set([tripId]);
+
+  // Selecting a specific upcoming trip should leave the stop view cleanly.
+  clearStopRouteLines();
+  resetStopMarkerStyles();
 
   Object.keys(busMarkersByTripId).forEach(id => {
     const marker = busMarkersByTripId[id];
@@ -365,8 +377,25 @@ function clearBusFocus() {
 }
 
 function resetAppView() {
+  if (isResettingAppView) return;
+
+  isResettingAppView = true;
   clearBusFocus();
   map.closePopup();
+  isResettingAppView = false;
+}
+
+function handlePopupClosed() {
+  if (isResettingAppView) return;
+
+  // When changing from a stop popup to a bus popup, Leaflet closes the old popup.
+  // That close is intentional, so do not treat it as the user clearing the view.
+  if (suppressNextPopupCloseReset) {
+    suppressNextPopupCloseReset = false;
+    return;
+  }
+
+  resetAppView();
 }
 
 function stopLeafletEvent(event) {
@@ -377,6 +406,11 @@ function stopLeafletEvent(event) {
   if (event.originalEvent) {
     L.DomEvent.stop(event.originalEvent);
   }
+}
+
+function stopBrowserEvent(event) {
+  if (!event) return;
+  event.stopPropagation();
 }
 
 function formatMinutesAway(arrivalSeconds, currentSeconds) {
@@ -519,17 +553,13 @@ async function loadStops() {
             const shapeId = row.getAttribute("data-shape-id");
             const tripId = row.getAttribute("data-trip-id");
 
+            suppressNextPopupCloseReset = true;
             drawTripShapeByShapeId(shapeId);
             focusSingleTrip(tripId);
           };
 
-          row.addEventListener("pointerdown", event => {
-            event.stopPropagation();
-          });
-
-          row.addEventListener("touchstart", event => {
-            event.stopPropagation();
-          }, { passive: true });
+          row.addEventListener("pointerdown", stopBrowserEvent);
+          row.addEventListener("touchstart", stopBrowserEvent, { passive: true });
 
           row.addEventListener("click", selectUpcomingTrip);
         });
@@ -663,9 +693,13 @@ function updateBusPositionsLive() {
       marker.on("click", event => {
         stopLeafletEvent(event);
 
+        suppressNextPopupCloseReset = true;
         drawSpecificTripShape(trip);
         focusSelectedBus(trip.tripId);
+        marker.openPopup();
       });
+
+      marker.on("popupclose", handlePopupClosed);
 
       busMarkersByTripId[trip.tripId] = marker;
     }
@@ -685,9 +719,7 @@ map.on("click", () => {
   resetAppView();
 });
 
-map.on("touchstart", () => {
-  resetAppView();
-});
+map.on("popupclose", handlePopupClosed);
 
 async function init() {
   await loadCoreData();
