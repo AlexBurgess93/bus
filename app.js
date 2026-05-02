@@ -34,8 +34,13 @@ let latestTripPositionsByTripId = {};
 let selectedPanelType = null;
 let activeTripIdsGlobal = new Set();
 let serviceDayOffsetSeconds = 0;
+let simulatedCurrentSecondsOverride = null;
 let busUpdateTimerId = null;
 let hasWarnedAboutNoActiveTrips = false;
+
+// Set this to false if you only ever want true real-time behaviour.
+// When true, the prototype still shows buses if the current clock time has no active trips in the processed dataset.
+const KEEP_PROTOTYPE_VISIBLE_WHEN_NO_REAL_TIME_BUSES = true;
 
 const selectionPanel = document.getElementById("selectionPanel");
 const selectionPanelContent = document.getElementById("selectionPanelContent");
@@ -430,6 +435,10 @@ function getClockSecondsPrecise() {
 }
 
 function getCurrentSecondsPrecise() {
+  if (simulatedCurrentSecondsOverride !== null) {
+    return simulatedCurrentSecondsOverride;
+  }
+
   return getClockSecondsPrecise() + serviceDayOffsetSeconds;
 }
 
@@ -456,23 +465,99 @@ function countActiveTripsAtSeconds(currentSeconds) {
   return count;
 }
 
+function findNearestInServiceSecond(clockSeconds) {
+  let best = null;
+
+  timetableTrips.forEach(trip => {
+    if (!trip?.stops?.length) return;
+
+    const firstStopTime = timeToSeconds(trip.stops[0].departureTime);
+    const lastStopTime = timeToSeconds(trip.stops[trip.stops.length - 1].arrivalTime);
+
+    if (Number.isNaN(firstStopTime) || Number.isNaN(lastStopTime)) return;
+
+    const candidates = [];
+
+    if (clockSeconds < firstStopTime) {
+      candidates.push(firstStopTime + 60);
+    } else if (clockSeconds > lastStopTime) {
+      candidates.push(Math.max(firstStopTime, lastStopTime - 60));
+    } else {
+      candidates.push(clockSeconds);
+    }
+
+    candidates.forEach(candidateSeconds => {
+      const distance = Math.min(
+        Math.abs(candidateSeconds - clockSeconds),
+        Math.abs(candidateSeconds - (clockSeconds + 86400)),
+        Math.abs(candidateSeconds - (clockSeconds - 86400))
+      );
+
+      if (!best || distance < best.distance) {
+        best = {
+          seconds: candidateSeconds,
+          distance
+        };
+      }
+    });
+  });
+
+  return best ? best.seconds : null;
+}
+
 function chooseServiceDayOffset() {
   const clockSeconds = getClockSecondsPrecise();
-  const activeToday = countActiveTripsAtSeconds(clockSeconds);
-  const activeAfterMidnightService = countActiveTripsAtSeconds(clockSeconds + 86400);
 
-  // This matters after midnight because GTFS often represents 12:30am as 24:30:00,
-  // while the device clock says 00:30:00.
-  if (activeToday === 0 && activeAfterMidnightService > 0) {
-    serviceDayOffsetSeconds = 86400;
-  } else {
-    serviceDayOffsetSeconds = 0;
+  const candidates = [
+    { label: "device clock", offset: 0, seconds: clockSeconds },
+    { label: "GTFS after-midnight service day", offset: 86400, seconds: clockSeconds + 86400 },
+    { label: "previous service day", offset: -86400, seconds: clockSeconds - 86400 }
+  ];
+
+  const scoredCandidates = candidates.map(candidate => ({
+    ...candidate,
+    activeTrips: countActiveTripsAtSeconds(candidate.seconds)
+  }));
+
+  scoredCandidates.sort((a, b) => b.activeTrips - a.activeTrips);
+
+  const bestCandidate = scoredCandidates[0];
+
+  simulatedCurrentSecondsOverride = null;
+
+  if (bestCandidate && bestCandidate.activeTrips > 0) {
+    serviceDayOffsetSeconds = bestCandidate.offset;
+
+    console.log("Using timetable time source:", bestCandidate.label);
+    console.log("Active trips:", bestCandidate.activeTrips);
+    console.log("Clock seconds:", Math.round(clockSeconds));
+    console.log("Service day offset seconds:", serviceDayOffsetSeconds);
+    return;
   }
 
-  console.log("Clock seconds:", Math.round(clockSeconds));
-  console.log("Service day offset seconds:", serviceDayOffsetSeconds);
-  console.log("Active trips at clock time:", activeToday);
-  console.log("Active trips at GTFS after-midnight time:", activeAfterMidnightService);
+  serviceDayOffsetSeconds = 0;
+
+  if (KEEP_PROTOTYPE_VISIBLE_WHEN_NO_REAL_TIME_BUSES) {
+    const nearestInServiceSecond = findNearestInServiceSecond(clockSeconds);
+
+    if (nearestInServiceSecond !== null) {
+      simulatedCurrentSecondsOverride = nearestInServiceSecond;
+
+      console.warn(
+        "No trips were active at the device clock time, so the prototype is showing the nearest in-service timetable moment instead.",
+        {
+          deviceClockSeconds: Math.round(clockSeconds),
+          simulatedTimetableSeconds: Math.round(simulatedCurrentSecondsOverride),
+          activeTripsAtSimulatedTime: countActiveTripsAtSeconds(simulatedCurrentSecondsOverride)
+        }
+      );
+      return;
+    }
+  }
+
+  console.warn(
+    "No active trips found for the device time, after-midnight time, previous service day, or nearest-service fallback."
+  );
 }
 
 function createStopLookup(stops) {
@@ -770,6 +855,8 @@ async function loadCoreData() {
   timetableTrips = await timetableRes.json();
   stopUpcoming = await stopUpcomingRes.json();
 
+  chooseServiceDayOffset();
+
   console.log("Core data loaded");
   console.log("Routes:", allRoutes.length);
   console.log("Trips:", allTrips.length);
@@ -932,7 +1019,8 @@ function updateBusPositionsLive() {
     hasWarnedAboutNoActiveTrips = false;
   } else if (!hasWarnedAboutNoActiveTrips) {
     console.warn(
-      "No active timetable trips found for the current device time. Stops can still render while buses are empty if no trip is active right now."
+      "No active timetable trips found for the selected timetable second. Check the logs from chooseServiceDayOffset().",
+      { currentSeconds: Math.round(currentSeconds), serviceDayOffsetSeconds, simulatedCurrentSecondsOverride }
     );
     hasWarnedAboutNoActiveTrips = true;
   }
