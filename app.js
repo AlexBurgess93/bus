@@ -17,6 +17,8 @@ const USEFUL_ROUTES = [
 
 let currentRouteLine = null;
 let selectedTripId = null;
+let selectedStopId = null;
+let highlightedTripIds = new Set();
 
 let allShapes = {};
 let allRoutes = [];
@@ -139,6 +141,8 @@ function clearRouteLine() {
 
 function focusSelectedBus(tripId) {
   selectedTripId = tripId;
+  selectedStopId = null;
+  highlightedTripIds = new Set([tripId]);
 
   Object.keys(busMarkersByTripId).forEach(id => {
     const marker = busMarkersByTripId[id];
@@ -146,9 +150,9 @@ function focusSelectedBus(tripId) {
     if (id === selectedTripId) {
       marker.setOpacity(1);
       marker.setIcon(createBusIcon(true));
-      marker.setZIndexOffset(1000);
+      marker.setZIndexOffset(1200);
     } else {
-      marker.setOpacity(0.25);
+      marker.setOpacity(0.15);
       marker.setIcon(createBusIcon(false));
       marker.setZIndexOffset(0);
     }
@@ -159,8 +163,50 @@ function focusSelectedBus(tripId) {
   }
 }
 
+function focusTripsForStop(stopId, upcomingItems) {
+  selectedTripId = null;
+  selectedStopId = stopId;
+  highlightedTripIds = new Set(upcomingItems.map(item => item.tripId));
+
+  Object.keys(busMarkersByTripId).forEach(tripId => {
+    const marker = busMarkersByTripId[tripId];
+
+    if (highlightedTripIds.has(tripId)) {
+      marker.setOpacity(1);
+      marker.setIcon(createBusIcon(true));
+      marker.setZIndexOffset(1000);
+    } else {
+      marker.setOpacity(0.15);
+      marker.setIcon(createBusIcon(false));
+      marker.setZIndexOffset(0);
+    }
+  });
+}
+
+function focusSingleTrip(tripId) {
+  selectedTripId = tripId;
+  highlightedTripIds = new Set([tripId]);
+
+  Object.keys(busMarkersByTripId).forEach(id => {
+    const marker = busMarkersByTripId[id];
+
+    if (id === tripId) {
+      marker.setOpacity(1);
+      marker.setIcon(createBusIcon(true));
+      marker.setZIndexOffset(1200);
+      marker.openPopup();
+    } else {
+      marker.setOpacity(0.15);
+      marker.setIcon(createBusIcon(false));
+      marker.setZIndexOffset(0);
+    }
+  });
+}
+
 function clearBusFocus() {
   selectedTripId = null;
+  selectedStopId = null;
+  highlightedTripIds = new Set();
 
   Object.keys(busMarkersByTripId).forEach(id => {
     const marker = busMarkersByTripId[id];
@@ -191,7 +237,6 @@ function getUpcomingForStop(stopId, minutesAhead = 30) {
   return upcoming
     .filter(item => {
       const arrivalSeconds = timeToSeconds(item.arrivalTime);
-
       return arrivalSeconds >= currentSeconds && arrivalSeconds <= maxSeconds;
     })
     .slice(0, 8);
@@ -272,6 +317,8 @@ async function loadStops() {
 
       const upcoming = getUpcomingForStop(stop.id, 30);
 
+      focusTripsForStop(stop.id, upcoming);
+
       const upcomingHTML = upcoming.length
         ? upcoming.map(item => {
             const minsAway = formatMinutesAway(
@@ -280,7 +327,7 @@ async function loadStops() {
             );
 
             return `
-              <div class="upcoming-row" data-shape-id="${item.shapeId}">
+              <div class="upcoming-row" data-shape-id="${item.shapeId}" data-trip-id="${item.tripId}">
                 <strong>${item.routeShortName}</strong>
                 <span>${minsAway}</span><br>
                 <small>${item.headsign}</small>
@@ -309,7 +356,10 @@ async function loadStops() {
             popupEvent.stopPropagation();
 
             const shapeId = row.getAttribute("data-shape-id");
+            const tripId = row.getAttribute("data-trip-id");
+
             drawTripShapeByShapeId(shapeId);
+            focusSingleTrip(tripId);
           });
         });
       }, 0);
@@ -415,9 +465,13 @@ function updateBusPositionsLive() {
       if (selectedTripId === trip.tripId) {
         marker.setOpacity(1);
         marker.setIcon(createBusIcon(true));
+        marker.setZIndexOffset(1200);
+      } else if (highlightedTripIds.has(trip.tripId)) {
+        marker.setOpacity(1);
+        marker.setIcon(createBusIcon(true));
         marker.setZIndexOffset(1000);
-      } else if (selectedTripId) {
-        marker.setOpacity(0.25);
+      } else if (selectedTripId || selectedStopId) {
+        marker.setOpacity(0.15);
         marker.setIcon(createBusIcon(false));
         marker.setZIndexOffset(0);
       } else {
