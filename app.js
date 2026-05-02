@@ -16,6 +16,7 @@ const USEFUL_ROUTES = [
 ];
 
 let currentRouteLine = null;
+let selectedTripId = null;
 
 let allShapes = {};
 let allRoutes = [];
@@ -112,6 +113,58 @@ function interpolateAlongShape(shapeCoords, stopA, stopB, progress) {
   ];
 }
 
+function createBusIcon(isSelected = false) {
+  return L.divIcon({
+    className: "",
+    html: `
+      <div class="${isSelected ? "bus-icon selected" : "bus-icon"}">
+        🚌
+      </div>
+    `,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+    popupAnchor: [0, -15]
+  });
+}
+
+function focusSelectedBus(tripId) {
+  selectedTripId = tripId;
+
+  Object.keys(busMarkersByTripId).forEach(id => {
+    const marker = busMarkersByTripId[id];
+
+    if (id === selectedTripId) {
+      marker.setOpacity(1);
+      marker.setIcon(createBusIcon(true));
+      marker.setZIndexOffset(1000);
+    } else {
+      marker.setOpacity(0.25);
+      marker.setIcon(createBusIcon(false));
+      marker.setZIndexOffset(0);
+    }
+  });
+
+  if (currentRouteLine) {
+    currentRouteLine.bringToBack();
+  }
+}
+
+function clearBusFocus() {
+  selectedTripId = null;
+
+  Object.keys(busMarkersByTripId).forEach(id => {
+    const marker = busMarkersByTripId[id];
+
+    marker.setOpacity(1);
+    marker.setIcon(createBusIcon(false));
+    marker.setZIndexOffset(500);
+  });
+
+  if (currentRouteLine) {
+    currentRouteLine.bringToBack();
+  }
+}
+
 async function loadCoreData() {
   const [routesRes, tripsRes, shapesRes, timetableRes] = await Promise.all([
     fetch("data/processed/routes.json"),
@@ -186,6 +239,8 @@ function drawSpecificTripShape(trip) {
     opacity: 0.9
   }).addTo(map);
 
+  currentRouteLine.bringToBack();
+
   currentRouteLine.bindPopup(`
     <strong>Route ${trip.routeShortName}</strong><br>
     ${trip.routeLongName}<br>
@@ -225,6 +280,8 @@ async function drawRouteByShortName(routeShortName) {
     weight: 5,
     opacity: 0.9
   }).addTo(map);
+
+  currentRouteLine.bringToBack();
 
   currentRouteLine.bindPopup(`
     <strong>Route ${route.shortName}</strong><br>
@@ -300,22 +357,37 @@ function updateBusPositionsLive() {
     `;
 
     if (busMarkersByTripId[trip.tripId]) {
-      busMarkersByTripId[trip.tripId]
+      const marker = busMarkersByTripId[trip.tripId];
+
+      marker
         .setLatLng(tripPosition.position)
         .setPopupContent(popupHTML);
+
+      if (selectedTripId === trip.tripId) {
+        marker.setOpacity(1);
+        marker.setIcon(createBusIcon(true));
+        marker.setZIndexOffset(1000);
+      } else if (selectedTripId) {
+        marker.setOpacity(0.25);
+        marker.setIcon(createBusIcon(false));
+        marker.setZIndexOffset(0);
+      } else {
+        marker.setOpacity(1);
+        marker.setIcon(createBusIcon(false));
+        marker.setZIndexOffset(500);
+      }
     } else {
-      const marker = L.circleMarker(tripPosition.position, {
-        radius: 8,
-        weight: 2,
-        fillOpacity: 1,
-        color: "black",
-        fillColor: "orange"
+      const marker = L.marker(tripPosition.position, {
+        icon: createBusIcon(false),
+        zIndexOffset: 500
       })
         .addTo(map)
         .bindPopup(popupHTML);
 
-      marker.on("click", () => {
+      marker.on("click", event => {
+        L.DomEvent.stopPropagation(event);
         drawSpecificTripShape(trip);
+        focusSelectedBus(trip.tripId);
       });
 
       busMarkersByTripId[trip.tripId] = marker;
@@ -331,6 +403,10 @@ function updateBusPositionsLive() {
 
   requestAnimationFrame(updateBusPositionsLive);
 }
+
+map.on("click", () => {
+  clearBusFocus();
+});
 
 async function init() {
   await loadCoreData();
