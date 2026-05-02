@@ -801,7 +801,10 @@ function updateBusPositionsLive() {
       marker.on("click", event => {
         stopLeafletEvent(event);
 
-        suppressNextPopupCloseReset = true;
+        // Important mobile fix:
+        // Direct bus taps must NOT suppress the next popup close.
+        // Suppression is only used when moving from a stop popup row into a bus popup,
+        // because Leaflet closes the old stop popup as part of that transition.
         drawSpecificTripShape(trip);
         focusSelectedBus(trip.tripId);
         marker.openPopup();
@@ -824,6 +827,19 @@ function updateBusPositionsLive() {
 }
 
 map.on("click", () => {
+  resetAppView();
+});
+
+// Mobile Safari can treat some map taps differently from desktop clicks.
+// This gives the map the same escape behaviour on touch devices.
+map.on("touchstart", event => {
+  const target = event.originalEvent?.target;
+
+  // Do not reset when the user is touching inside a popup or on a bus/stop marker.
+  if (target?.closest?.(".leaflet-popup, .leaflet-marker-icon, .leaflet-interactive")) {
+    return;
+  }
+
   resetAppView();
 });
 
