@@ -4,6 +4,25 @@ const path = require("path");
 const rawDir = path.join(__dirname, "../data/raw");
 const processedDir = path.join(__dirname, "../data/processed");
 
+const TARGET_ROUTES = [
+  "24",
+  "32",
+  "33",
+  "39",
+  "72",
+  "73",
+  "176",
+  "177",
+  "178",
+  "179",
+  "270",
+  "910",
+  "930",
+  "930X",
+  "935",
+  "940"
+];
+
 function parseCSVLine(line) {
   const result = [];
   let current = "";
@@ -61,8 +80,10 @@ function convertStops() {
     }
   });
 
-  const outputPath = path.join(processedDir, "stops.json");
-  fs.writeFileSync(outputPath, JSON.stringify(stops));
+  fs.writeFileSync(
+    path.join(processedDir, "stops.json"),
+    JSON.stringify(stops)
+  );
 
   console.log(`Converted ${stops.length} stops`);
 }
@@ -83,34 +104,24 @@ function convertShapes() {
     const lon = parseFloat(cols[lonIndex]);
     const sequence = parseInt(cols[sequenceIndex], 10);
 
-    if (!shapeId || isNaN(lat) || isNaN(lon) || isNaN(sequence)) {
-      return;
-    }
+    if (!shapeId || isNaN(lat) || isNaN(lon) || isNaN(sequence)) return;
 
     if (!shapes[shapeId]) {
       shapes[shapeId] = [];
     }
 
-    shapes[shapeId].push({
-      lat,
-      lon,
-      sequence
-    });
+    shapes[shapeId].push({ lat, lon, sequence });
   });
 
-  // Sort each shape's points into the correct order
   Object.keys(shapes).forEach(shapeId => {
     shapes[shapeId].sort((a, b) => a.sequence - b.sequence);
-
-    // Leaflet wants coordinates as [lat, lon]
-    shapes[shapeId] = shapes[shapeId].map(point => [
-      point.lat,
-      point.lon
-    ]);
+    shapes[shapeId] = shapes[shapeId].map(point => [point.lat, point.lon]);
   });
 
-  const outputPath = path.join(processedDir, "shapes.json");
-  fs.writeFileSync(outputPath, JSON.stringify(shapes));
+  fs.writeFileSync(
+    path.join(processedDir, "shapes.json"),
+    JSON.stringify(shapes)
+  );
 
   console.log(`Converted ${Object.keys(shapes).length} shapes`);
 }
@@ -132,8 +143,10 @@ function convertRoutes() {
     });
   });
 
-  const outputPath = path.join(processedDir, "routes.json");
-  fs.writeFileSync(outputPath, JSON.stringify(routes));
+  fs.writeFileSync(
+    path.join(processedDir, "routes.json"),
+    JSON.stringify(routes)
+  );
 
   console.log(`Converted ${routes.length} routes`);
 }
@@ -159,8 +172,10 @@ function convertTrips() {
     });
   });
 
-  const outputPath = path.join(processedDir, "trips.json");
-  fs.writeFileSync(outputPath, JSON.stringify(trips));
+  fs.writeFileSync(
+    path.join(processedDir, "trips.json"),
+    JSON.stringify(trips)
+  );
 
   console.log(`Converted ${trips.length} trips`);
 }
@@ -211,14 +226,110 @@ function convertStopRoutes() {
 
   Object.keys(stopRoutes).forEach(stopId => {
     cleanStopRoutes[stopId] = Array.from(stopRoutes[stopId]).sort((a, b) => {
-      return Number(a) - Number(b);
+      const numA = Number(a);
+      const numB = Number(b);
+
+      if (isNaN(numA) || isNaN(numB)) {
+        return a.localeCompare(b);
+      }
+
+      return numA - numB;
     });
   });
 
-  const outputPath = path.join(processedDir, "stop-routes.json");
-  fs.writeFileSync(outputPath, JSON.stringify(cleanStopRoutes));
+  fs.writeFileSync(
+    path.join(processedDir, "stop-routes.json"),
+    JSON.stringify(cleanStopRoutes)
+  );
 
-  console.log(`Converted route lists for ${Object.keys(cleanStopRoutes).length} stops`);
+  console.log(
+    `Converted route lists for ${Object.keys(cleanStopRoutes).length} stops`
+  );
+}
+
+function convertTripStopTimes() {
+  const stopTimesData = readGTFSFile("stop_times.txt");
+  const tripsData = readGTFSFile("trips.txt");
+  const routesData = readGTFSFile("routes.txt");
+
+  const stopTimesTripIdIndex = stopTimesData.headers.indexOf("trip_id");
+  const arrivalTimeIndex = stopTimesData.headers.indexOf("arrival_time");
+  const departureTimeIndex = stopTimesData.headers.indexOf("departure_time");
+  const stopIdIndex = stopTimesData.headers.indexOf("stop_id");
+  const stopSequenceIndex = stopTimesData.headers.indexOf("stop_sequence");
+
+  const tripsTripIdIndex = tripsData.headers.indexOf("trip_id");
+  const tripsRouteIdIndex = tripsData.headers.indexOf("route_id");
+  const tripsServiceIdIndex = tripsData.headers.indexOf("service_id");
+  const tripsHeadsignIndex = tripsData.headers.indexOf("trip_headsign");
+  const tripsShapeIdIndex = tripsData.headers.indexOf("shape_id");
+
+  const routesRouteIdIndex = routesData.headers.indexOf("route_id");
+  const routesShortNameIndex = routesData.headers.indexOf("route_short_name");
+  const routesLongNameIndex = routesData.headers.indexOf("route_long_name");
+
+  const routeIdToRoute = {};
+
+  routesData.rows.forEach(cols => {
+    routeIdToRoute[cols[routesRouteIdIndex]] = {
+      shortName: cols[routesShortNameIndex],
+      longName: cols[routesLongNameIndex]
+    };
+  });
+
+  const tripInfo = {};
+
+  tripsData.rows.forEach(cols => {
+    const tripId = cols[tripsTripIdIndex];
+    const routeId = cols[tripsRouteIdIndex];
+    const route = routeIdToRoute[routeId];
+
+    if (!route) return;
+
+    const routeShortName = route.shortName;
+
+    // This is the important filter.
+    // Only trips for MVP routes get included in trip-stop-times.json.
+    if (!TARGET_ROUTES.includes(routeShortName)) return;
+
+    tripInfo[tripId] = {
+      tripId,
+      routeId,
+      routeShortName,
+      routeLongName: route.longName,
+      serviceId: cols[tripsServiceIdIndex],
+      headsign: cols[tripsHeadsignIndex],
+      shapeId: cols[tripsShapeIdIndex],
+      stops: []
+    };
+  });
+
+  stopTimesData.rows.forEach(cols => {
+    const tripId = cols[stopTimesTripIdIndex];
+
+    if (!tripInfo[tripId]) return;
+
+    tripInfo[tripId].stops.push({
+      stopId: cols[stopIdIndex],
+      arrivalTime: cols[arrivalTimeIndex],
+      departureTime: cols[departureTimeIndex],
+      sequence: Number(cols[stopSequenceIndex])
+    });
+  });
+
+  const trips = Object.values(tripInfo)
+    .filter(trip => trip.stops.length > 1)
+    .map(trip => {
+      trip.stops.sort((a, b) => a.sequence - b.sequence);
+      return trip;
+    });
+
+  fs.writeFileSync(
+    path.join(processedDir, "trip-stop-times.json"),
+    JSON.stringify(trips)
+  );
+
+  console.log(`Converted stop times for ${trips.length} trips`);
 }
 
 convertStops();
@@ -226,3 +337,4 @@ convertShapes();
 convertRoutes();
 convertTrips();
 convertStopRoutes();
+convertTripStopTimes();
