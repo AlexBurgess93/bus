@@ -341,7 +341,7 @@ main {
 }
 
 .beta-link-button {
-  bottom: calc(clamp(118px, 18vh, 164px) + 14px);
+  top: 14px;
 }
 
 .beta-back-button {
@@ -355,8 +355,8 @@ main {
 
 .beta-mode-control {
   position: absolute;
-  left: 14px;
-  top: 14px;
+  right: 14px;
+  bottom: calc(clamp(118px, 18vh, 164px) + 14px);
   z-index: 900;
   display: grid;
   gap: 7px;
@@ -490,8 +490,8 @@ main {
 
 @media (max-width: 640px) {
   .beta-link-button {
+    top: 12px;
     right: 12px;
-    bottom: calc(clamp(112px, 18vh, 146px) + 12px);
   }
 
   .beta-back-button {
@@ -500,8 +500,8 @@ main {
   }
 
   .beta-mode-control {
-    left: 10px;
-    top: 10px;
+    right: 10px;
+    bottom: calc(clamp(112px, 18vh, 146px) + 12px);
     padding: 8px;
     border-radius: 16px;
   }

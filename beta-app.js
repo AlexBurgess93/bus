@@ -40,7 +40,6 @@ let hasWarnedAboutNoActiveTrips = false;
 
 let betaTrackingMode = "live";
 let liveBusMarkersByTripId = {};
-let ghostConnectorLinesByTripId = {};
 let selectedBusVariant = "live";
 
 const betaModeButtons = document.querySelectorAll(".beta-mode-button");
@@ -784,63 +783,6 @@ function applyBetaMarkerVisibility() {
   });
 }
 
-function getGhostLineColor(delayClass) {
-  if (delayClass === "ahead") return "#10b981";
-  if (delayClass === "behind") return "#f97316";
-  return "#2563eb";
-}
-
-function clearGhostConnectorLines() {
-  Object.keys(ghostConnectorLinesByTripId).forEach(tripId => {
-    map.removeLayer(ghostConnectorLinesByTripId[tripId]);
-    delete ghostConnectorLinesByTripId[tripId];
-  });
-}
-
-function updateGhostConnectorLine(tripId, scheduledPosition, livePosition, delayClass) {
-  if (betaTrackingMode !== "ghost") {
-    if (ghostConnectorLinesByTripId[tripId]) {
-      map.removeLayer(ghostConnectorLinesByTripId[tripId]);
-      delete ghostConnectorLinesByTripId[tripId];
-    }
-    return;
-  }
-
-  if (!scheduledPosition?.position || !livePosition?.position) return;
-
-  const lineCoords = [scheduledPosition.position, livePosition.position];
-  const lineColor = getGhostLineColor(delayClass);
-
-  if (ghostConnectorLinesByTripId[tripId]) {
-    ghostConnectorLinesByTripId[tripId]
-      .setLatLngs(lineCoords)
-      .setStyle({ color: lineColor });
-  } else {
-    ghostConnectorLinesByTripId[tripId] = L.polyline(lineCoords, {
-      color: lineColor,
-      weight: 3,
-      opacity: 0.92,
-      dashArray: "6 6",
-      interactive: false
-    }).addTo(map);
-  }
-
-  ghostConnectorLinesByTripId[tripId].bringToBack();
-
-  if (currentRouteLine) {
-    currentRouteLine.bringToBack();
-  }
-}
-
-function removeInactiveGhostConnectorLines(activeTripIds) {
-  Object.keys(ghostConnectorLinesByTripId).forEach(tripId => {
-    if (!activeTripIds.has(tripId) || betaTrackingMode !== "ghost") {
-      map.removeLayer(ghostConnectorLinesByTripId[tripId]);
-      delete ghostConnectorLinesByTripId[tripId];
-    }
-  });
-}
-
 function clearRouteLine() {
   if (currentRouteLine) {
     map.removeLayer(currentRouteLine);
@@ -856,9 +798,9 @@ function drawTripShapeByShapeId(shapeId) {
   clearRouteLine();
 
   currentRouteLine = L.polyline(shapeCoords, {
-    color: betaTrackingMode === "ghost" ? "#111827" : "#f59e0b",
-    weight: betaTrackingMode === "ghost" ? 6 : 5,
-    opacity: betaTrackingMode === "ghost" ? 0.88 : 0.92
+    color: "#f59e0b",
+    weight: 5,
+    opacity: 0.92
   }).addTo(map);
 
   currentRouteLine.bringToBack();
@@ -949,7 +891,6 @@ function clearBusFocus() {
   applyBetaMarkerVisibility();
   clearRouteLine();
   clearStopRouteLines();
-  clearGhostConnectorLines();
   resetStopMarkerStyles();
 }
 
@@ -1193,8 +1134,6 @@ function updateBusPositionsLive() {
       liveBusMarkersByTripId[trip.tripId] = marker;
     }
 
-    updateGhostConnectorLine(trip.tripId, scheduledPosition, livePosition, delayClass);
-
     if (selectedTripId === trip.tripId && selectedPanelType === "bus") {
       renderBusPanel(trip, selectedBusVariant);
     }
@@ -1214,8 +1153,6 @@ function updateBusPositionsLive() {
       delete liveBusMarkersByTripId[tripId];
     }
   });
-
-  removeInactiveGhostConnectorLines(activeTripIds);
 
   activeTripIdsGlobal = activeTripIds;
   applyBetaMarkerVisibility();
@@ -1245,20 +1182,10 @@ function setBetaTrackingMode(mode) {
   }
 
   if (selectedTripId) {
-    const selectedTrip = timetableTrips.find(trip => trip.tripId === selectedTripId);
-    if (selectedTrip) {
-      drawSpecificTripShape(selectedTrip);
-    }
     focusSelectedBus(selectedTripId, selectedBusVariant);
   } else {
     applyBetaMarkerVisibility();
   }
-
-  if (mode !== "ghost") {
-    clearGhostConnectorLines();
-  }
-
-  updateBusPositionsLive();
 }
 
 betaModeButtons.forEach(button => {
