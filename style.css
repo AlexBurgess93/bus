@@ -52,3 +52,32 @@ main {
   border: 3px solid #2563eb;
   box-shadow: 0 4px 14px rgba(37, 99, 235, 0.6);
 }
+
+.upcoming-list {
+  margin-top: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.upcoming-row {
+  padding: 8px;
+  margin: 6px 0;
+  border-radius: 8px;
+  background: #f3f4f6;
+  cursor: pointer;
+  line-height: 1.25;
+}
+
+.upcoming-row:hover {
+  background: #e5e7eb;
+}
+
+.upcoming-row span {
+  float: right;
+  font-weight: 700;
+}
+
+.empty-state {
+  margin-top: 8px;
+  color: #6b7280;
+}

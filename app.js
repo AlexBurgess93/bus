@@ -22,6 +22,7 @@ let allShapes = {};
 let allRoutes = [];
 let allTrips = [];
 let timetableTrips = [];
+let stopUpcoming = {};
 let stopLookup = {};
 
 let busMarkersByTripId = {};
@@ -31,15 +32,9 @@ function timeToSeconds(timeString) {
   return hours * 3600 + minutes * 60 + seconds;
 }
 
-function clearRouteLine() {
-  if (currentRouteLine) {
-    map.removeLayer(currentRouteLine);
-    currentRouteLine = null;
-  }
-}
-
 function getCurrentSecondsPrecise() {
   const now = new Date();
+
   return (
     now.getHours() * 3600 +
     now.getMinutes() * 60 +
@@ -61,6 +56,7 @@ function createStopLookup(stops) {
 function distanceBetweenPoints(a, b) {
   const latDiff = a[0] - b[0];
   const lonDiff = a[1] - b[1];
+
   return Math.sqrt(latDiff * latDiff + lonDiff * lonDiff);
 }
 
@@ -134,6 +130,13 @@ function createBusIcon(isSelected = false) {
   });
 }
 
+function clearRouteLine() {
+  if (currentRouteLine) {
+    map.removeLayer(currentRouteLine);
+    currentRouteLine = null;
+  }
+}
+
 function focusSelectedBus(tripId) {
   selectedTripId = tripId;
 
@@ -170,24 +173,69 @@ function clearBusFocus() {
   clearRouteLine();
 }
 
+function formatMinutesAway(arrivalSeconds, currentSeconds) {
+  const diffSeconds = arrivalSeconds - currentSeconds;
+  const diffMinutes = Math.round(diffSeconds / 60);
+
+  if (diffMinutes <= 0) return "due now";
+  if (diffMinutes === 1) return "1 min";
+  return `${diffMinutes} mins`;
+}
+
+function getUpcomingForStop(stopId, minutesAhead = 30) {
+  const currentSeconds = getCurrentSecondsPrecise();
+  const maxSeconds = currentSeconds + minutesAhead * 60;
+
+  const upcoming = stopUpcoming[stopId] || [];
+
+  return upcoming
+    .filter(item => {
+      const arrivalSeconds = timeToSeconds(item.arrivalTime);
+
+      return arrivalSeconds >= currentSeconds && arrivalSeconds <= maxSeconds;
+    })
+    .slice(0, 8);
+}
+
+function drawTripShapeByShapeId(shapeId) {
+  const shapeCoords = allShapes[shapeId];
+
+  if (!shapeCoords) return;
+
+  if (currentRouteLine) {
+    map.removeLayer(currentRouteLine);
+  }
+
+  currentRouteLine = L.polyline(shapeCoords, {
+    color: "blue",
+    weight: 5,
+    opacity: 0.9
+  }).addTo(map);
+
+  currentRouteLine.bringToBack();
+}
+
 async function loadCoreData() {
-  const [routesRes, tripsRes, shapesRes, timetableRes] = await Promise.all([
+  const [routesRes, tripsRes, shapesRes, timetableRes, stopUpcomingRes] = await Promise.all([
     fetch("data/processed/routes.json"),
     fetch("data/processed/trips.json"),
     fetch("data/processed/shapes.json"),
-    fetch("data/processed/trip-stop-times.json")
+    fetch("data/processed/trip-stop-times.json"),
+    fetch("data/processed/stop-upcoming.json")
   ]);
 
   allRoutes = await routesRes.json();
   allTrips = await tripsRes.json();
   allShapes = await shapesRes.json();
   timetableTrips = await timetableRes.json();
+  stopUpcoming = await stopUpcomingRes.json();
 
   console.log("Core data loaded");
   console.log("Routes:", allRoutes.length);
   console.log("Trips:", allTrips.length);
   console.log("Shapes:", Object.keys(allShapes).length);
   console.log("Filtered timetable trips:", timetableTrips.length);
+  console.log("Stop upcoming records:", Object.keys(stopUpcoming).length);
 }
 
 async function loadStops() {
@@ -211,21 +259,61 @@ async function loadStops() {
     const useful = routes.filter(r => USEFUL_ROUTES.includes(r));
     const other = routes.filter(r => !USEFUL_ROUTES.includes(r));
 
-    const popupHTML = `
-      <strong>${stop.name}</strong><br>
-      Stop ID: ${stop.id}<br><br>
-      <strong>Routes:</strong> ${routes.join(", ") || "None"}<br><br>
-      <strong style="color:green;">Useful:</strong> ${useful.join(", ") || "-"}<br>
-      <strong style="color:gray;">Other:</strong> ${other.join(", ") || "-"}
-    `;
-
-    L.circleMarker([stop.lat, stop.lon], {
+    const marker = L.circleMarker([stop.lat, stop.lon], {
       radius: 4,
       weight: 1,
       fillOpacity: 0.8
-    })
-      .addTo(map)
-      .bindPopup(popupHTML);
+    }).addTo(map);
+
+    marker.on("click", event => {
+      L.DomEvent.stopPropagation(event);
+
+      clearBusFocus();
+
+      const upcoming = getUpcomingForStop(stop.id, 30);
+
+      const upcomingHTML = upcoming.length
+        ? upcoming.map(item => {
+            const minsAway = formatMinutesAway(
+              timeToSeconds(item.arrivalTime),
+              getCurrentSecondsPrecise()
+            );
+
+            return `
+              <div class="upcoming-row" data-shape-id="${item.shapeId}">
+                <strong>${item.routeShortName}</strong>
+                <span>${minsAway}</span><br>
+                <small>${item.headsign}</small>
+              </div>
+            `;
+          }).join("")
+        : `<div class="empty-state">No MVP-route buses in the next 30 mins.</div>`;
+
+      marker.bindPopup(`
+        <strong>${stop.name}</strong><br>
+        Stop ID: ${stop.id}<br><br>
+
+        <strong>Routes:</strong> ${routes.join(", ") || "None"}<br>
+        <strong style="color:green;">Useful:</strong> ${useful.join(", ") || "-"}<br>
+        <strong style="color:gray;">Other:</strong> ${other.join(", ") || "-"}<br><br>
+
+        <strong>Coming soon:</strong>
+        <div class="upcoming-list">
+          ${upcomingHTML}
+        </div>
+      `).openPopup();
+
+      setTimeout(() => {
+        document.querySelectorAll(".upcoming-row").forEach(row => {
+          row.addEventListener("click", popupEvent => {
+            popupEvent.stopPropagation();
+
+            const shapeId = row.getAttribute("data-shape-id");
+            drawTripShapeByShapeId(shapeId);
+          });
+        });
+      }, 0);
+    });
   });
 }
 
@@ -251,50 +339,6 @@ function drawSpecificTripShape(trip) {
     ${trip.routeLongName}<br>
     Destination: ${trip.headsign}
   `);
-}
-
-async function drawRouteByShortName(routeShortName) {
-  const route = allRoutes.find(r => r.shortName === routeShortName);
-
-  if (!route) {
-    console.log("Route not found:", routeShortName);
-    return;
-  }
-
-  const routeTrips = allTrips.filter(t => t.routeId === route.id);
-
-  if (routeTrips.length === 0) {
-    console.log("No trips found for route:", routeShortName);
-    return;
-  }
-
-  const trip = routeTrips[0];
-  const shapeCoords = allShapes[trip.shapeId];
-
-  if (!shapeCoords) {
-    console.log("No shape found for shape ID:", trip.shapeId);
-    return;
-  }
-
-  if (currentRouteLine) {
-    map.removeLayer(currentRouteLine);
-  }
-
-  currentRouteLine = L.polyline(shapeCoords, {
-    color: "blue",
-    weight: 5,
-    opacity: 0.9
-  }).addTo(map);
-
-  currentRouteLine.bringToBack();
-
-  currentRouteLine.bindPopup(`
-    <strong>Route ${route.shortName}</strong><br>
-    ${route.longName}<br>
-    Destination: ${trip.headsign}
-  `);
-
-  map.fitBounds(currentRouteLine.getBounds());
 }
 
 function getTripPositionNow(trip, currentSeconds) {
@@ -391,6 +435,7 @@ function updateBusPositionsLive() {
 
       marker.on("click", event => {
         L.DomEvent.stopPropagation(event);
+
         drawSpecificTripShape(trip);
         focusSelectedBus(trip.tripId);
       });
