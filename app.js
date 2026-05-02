@@ -29,4 +29,34 @@ async function loadStops() {
   });
 }
 
-loadStops().catch(err => console.error(err));
+async function init() {
+  await loadStops();
+  await loadShapes();
+}
+
+init().catch(err => console.error(err));
+
+async function loadShapes() {
+  console.log("Loading shapes...");
+
+  const response = await fetch("data/processed/shapes.json");
+  const shapes = await response.json();
+
+  const shapeIds = Object.keys(shapes);
+  console.log("Total shapes:", shapeIds.length);
+
+  // Pick one shape to test
+  const firstShapeId = shapeIds[0];
+  const shapeCoords = shapes[firstShapeId];
+
+  console.log("Drawing shape:", firstShapeId);
+
+  const polyline = L.polyline(shapeCoords, {
+    color: "red",
+    weight: 4,
+    opacity: 0.8
+  }).addTo(map);
+
+  // Zoom map to fit the route
+  map.fitBounds(polyline.getBounds());
+}

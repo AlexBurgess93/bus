@@ -1,8 +1,8 @@
 const fs = require("fs");
 const path = require("path");
 
-const inputPath = path.join(__dirname, "../data/raw/stops.txt");
-const outputPath = path.join(__dirname, "../data/processed/stops.json");
+const rawDir = path.join(__dirname, "../data/raw");
+const processedDir = path.join(__dirname, "../data/processed");
 
 function parseCSVLine(line) {
   const result = [];
@@ -26,11 +26,19 @@ function parseCSVLine(line) {
   return result;
 }
 
-function convertStops() {
-  const text = fs.readFileSync(inputPath, "utf8");
+function readGTFSFile(filename) {
+  const filePath = path.join(rawDir, filename);
+  const text = fs.readFileSync(filePath, "utf8");
   const lines = text.trim().split(/\r?\n/);
 
   const headers = parseCSVLine(lines[0]).map(h => h.replace("\uFEFF", ""));
+  const rows = lines.slice(1).map(line => parseCSVLine(line));
+
+  return { headers, rows };
+}
+
+function convertStops() {
+  const { headers, rows } = readGTFSFile("stops.txt");
 
   const stopIdIndex = headers.indexOf("stop_id");
   const nameIndex = headers.indexOf("stop_name");
@@ -39,9 +47,7 @@ function convertStops() {
 
   const stops = [];
 
-  for (let i = 1; i < lines.length; i++) {
-    const cols = parseCSVLine(lines[i]);
-
+  rows.forEach(cols => {
     const lat = parseFloat(cols[latIndex]);
     const lon = parseFloat(cols[lonIndex]);
 
@@ -53,10 +59,61 @@ function convertStops() {
         lon
       });
     }
-  }
+  });
 
+  const outputPath = path.join(processedDir, "stops.json");
   fs.writeFileSync(outputPath, JSON.stringify(stops));
+
   console.log(`Converted ${stops.length} stops`);
 }
 
+function convertShapes() {
+  const { headers, rows } = readGTFSFile("shapes.txt");
+
+  const shapeIdIndex = headers.indexOf("shape_id");
+  const latIndex = headers.indexOf("shape_pt_lat");
+  const lonIndex = headers.indexOf("shape_pt_lon");
+  const sequenceIndex = headers.indexOf("shape_pt_sequence");
+
+  const shapes = {};
+
+  rows.forEach(cols => {
+    const shapeId = cols[shapeIdIndex];
+    const lat = parseFloat(cols[latIndex]);
+    const lon = parseFloat(cols[lonIndex]);
+    const sequence = parseInt(cols[sequenceIndex], 10);
+
+    if (!shapeId || isNaN(lat) || isNaN(lon) || isNaN(sequence)) {
+      return;
+    }
+
+    if (!shapes[shapeId]) {
+      shapes[shapeId] = [];
+    }
+
+    shapes[shapeId].push({
+      lat,
+      lon,
+      sequence
+    });
+  });
+
+  // Sort each shape's points into the correct order
+  Object.keys(shapes).forEach(shapeId => {
+    shapes[shapeId].sort((a, b) => a.sequence - b.sequence);
+
+    // Leaflet wants coordinates as [lat, lon]
+    shapes[shapeId] = shapes[shapeId].map(point => [
+      point.lat,
+      point.lon
+    ]);
+  });
+
+  const outputPath = path.join(processedDir, "shapes.json");
+  fs.writeFileSync(outputPath, JSON.stringify(shapes));
+
+  console.log(`Converted ${Object.keys(shapes).length} shapes`);
+}
+
 convertStops();
+convertShapes();
