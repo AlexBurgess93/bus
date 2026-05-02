@@ -209,21 +209,63 @@ function getFutureStopIdsForTrips(tripIds) {
   return futureStopIds;
 }
 
-function resetStopMarkerStyles() {
-  Object.keys(stopMarkersByStopId).forEach(stopId => {
-    const marker = stopMarkersByStopId[stopId];
+function getDefaultStopStyleForZoom(zoom = map.getZoom()) {
+  // Stops should act like background texture when zoomed out,
+  // then become clearer and easier to tap as the user zooms in.
+  if (zoom <= 11) {
+    return {
+      radius: 1.6,
+      color: "#94a3b8",
+      weight: 1,
+      fillColor: "#2563eb",
+      fillOpacity: 0.22,
+      opacity: 0.22
+    };
+  }
 
-    marker.setStyle({
-      radius: 4,
+  if (zoom <= 13) {
+    return {
+      radius: 2.6,
       color: "#64748b",
       weight: 1,
       fillColor: "#2563eb",
-      fillOpacity: 0.8,
-      opacity: 1
-    });
+      fillOpacity: 0.42,
+      opacity: 0.45
+    };
+  }
 
-    marker.bringToFront();
+  if (zoom <= 15) {
+    return {
+      radius: 3.6,
+      color: "#64748b",
+      weight: 1,
+      fillColor: "#2563eb",
+      fillOpacity: 0.68,
+      opacity: 0.75
+    };
+  }
+
+  return {
+    radius: 5,
+    color: "#475569",
+    weight: 1.25,
+    fillColor: "#2563eb",
+    fillOpacity: 0.85,
+    opacity: 1
+  };
+}
+
+function applyDefaultStopMarkerStylesForZoom() {
+  const style = getDefaultStopStyleForZoom();
+
+  Object.keys(stopMarkersByStopId).forEach(stopId => {
+    const marker = stopMarkersByStopId[stopId];
+    marker.setStyle(style);
   });
+}
+
+function resetStopMarkerStyles() {
+  applyDefaultStopMarkerStylesForZoom();
 }
 
 function highlightRelevantStopMarkers(selectedStopId, upcomingItems) {
@@ -878,14 +920,10 @@ async function loadStops() {
   console.log("Stops loaded:", stops.length);
 
   stops.forEach(stop => {
-    const marker = L.circleMarker([stop.lat, stop.lon], {
-      radius: 4,
-      color: "#64748b",
-      weight: 1,
-      fillColor: "#2563eb",
-      fillOpacity: 0.8,
-      opacity: 1
-    }).addTo(map);
+    const marker = L.circleMarker(
+      [stop.lat, stop.lon],
+      getDefaultStopStyleForZoom()
+    ).addTo(map);
 
     stopMarkersByStopId[stop.id] = marker;
 
@@ -1022,6 +1060,14 @@ function updateBusPositionsLive() {
     hasWarnedAboutNoActiveTrips = true;
   }
 }
+
+map.on("zoomend", () => {
+  // Only restyle all stops when there is no active selection.
+  // Selected stop/bus views deliberately override the default zoom styling.
+  if (!selectedTripId && !selectedStopId) {
+    applyDefaultStopMarkerStylesForZoom();
+  }
+});
 
 map.on("click", () => {
   resetAppView();
