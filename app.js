@@ -31,6 +31,13 @@ function timeToSeconds(timeString) {
   return hours * 3600 + minutes * 60 + seconds;
 }
 
+function clearRouteLine() {
+  if (currentRouteLine) {
+    map.removeLayer(currentRouteLine);
+    currentRouteLine = null;
+  }
+}
+
 function getCurrentSecondsPrecise() {
   const now = new Date();
   return (
@@ -160,9 +167,7 @@ function clearBusFocus() {
     marker.setZIndexOffset(500);
   });
 
-  if (currentRouteLine) {
-    currentRouteLine.bringToBack();
-  }
+  clearRouteLine();
 }
 
 async function loadCoreData() {
@@ -411,8 +416,6 @@ map.on("click", () => {
 async function init() {
   await loadCoreData();
   await loadStops();
-
-  await drawRouteByShortName("930");
 
   requestAnimationFrame(updateBusPositionsLive);
 }
