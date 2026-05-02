@@ -14859,4 +14859,3 @@ location_type, parent_station, stop_id, stop_code, stop_name, stop_desc, stop_la
 1,,162,162,"Nicholson Rd Stn",,-32.06137833333330,115.934645555556,,Bus;Rail,TNIC
 1,,163,163,"Ranford Rd Stn",,-32.0760,115.8970,,Bus;Rail;School Bus,TRAN
 1,,164,164,"Byford Stn",,-32.21676055555560,116.0072218020,,Bus;Rail,TBYF
-
