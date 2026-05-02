@@ -26,6 +26,7 @@ header p {
 }
 
 main {
+  position: relative;
   height: calc(100vh - 76px);
 }
 
@@ -86,7 +87,7 @@ main {
   position: absolute;
   top: 96px;
   right: 16px;
-  z-index: 1000;
+  z-index: 2000;
   padding: 10px 14px;
   border: none;
   border-radius: 999px;
@@ -96,7 +97,10 @@ main {
   font-weight: 700;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
+
 
 .reset-view-button:active {
   transform: scale(0.97);

@@ -249,6 +249,21 @@ function clearBusFocus() {
   clearStopRouteLines();
 }
 
+function resetAppView() {
+  clearBusFocus();
+  map.closePopup();
+}
+
+function stopLeafletEvent(event) {
+  if (!event) return;
+
+  L.DomEvent.stopPropagation(event);
+
+  if (event.originalEvent) {
+    L.DomEvent.stop(event.originalEvent);
+  }
+}
+
 function formatMinutesAway(arrivalSeconds, currentSeconds) {
   const diffSeconds = arrivalSeconds - currentSeconds;
   const diffMinutes = Math.round(diffSeconds / 60);
@@ -341,7 +356,7 @@ async function loadStops() {
     }).addTo(map);
 
     marker.on("click", event => {
-      L.DomEvent.stopPropagation(event);
+      stopLeafletEvent(event);
 
       clearBusFocus();
 
@@ -383,7 +398,8 @@ async function loadStops() {
 
       setTimeout(() => {
         document.querySelectorAll(".upcoming-row").forEach(row => {
-          row.addEventListener("click", popupEvent => {
+          const selectUpcomingTrip = popupEvent => {
+            popupEvent.preventDefault();
             popupEvent.stopPropagation();
 
             const shapeId = row.getAttribute("data-shape-id");
@@ -391,7 +407,17 @@ async function loadStops() {
 
             drawTripShapeByShapeId(shapeId);
             focusSingleTrip(tripId);
+          };
+
+          row.addEventListener("pointerdown", event => {
+            event.stopPropagation();
           });
+
+          row.addEventListener("touchstart", event => {
+            event.stopPropagation();
+          }, { passive: true });
+
+          row.addEventListener("click", selectUpcomingTrip);
         });
       }, 0);
     });
@@ -519,7 +545,7 @@ function updateBusPositionsLive() {
         .bindPopup(popupHTML);
 
       marker.on("click", event => {
-        L.DomEvent.stopPropagation(event);
+        stopLeafletEvent(event);
 
         drawSpecificTripShape(trip);
         focusSelectedBus(trip.tripId);
@@ -540,16 +566,32 @@ function updateBusPositionsLive() {
 }
 
 map.on("click", () => {
-  clearBusFocus();
+  resetAppView();
+});
+
+map.on("touchstart", () => {
+  resetAppView();
 });
 
 const resetViewButton = document.getElementById("resetViewButton");
 
-resetViewButton.addEventListener("click", event => {
-  event.stopPropagation();
-  clearBusFocus();
-  map.closePopup();
-});
+if (resetViewButton) {
+  L.DomEvent.disableClickPropagation(resetViewButton);
+  L.DomEvent.disableScrollPropagation(resetViewButton);
+
+  const handleResetButton = event => {
+    event.preventDefault();
+    event.stopPropagation();
+    resetAppView();
+  };
+
+  resetViewButton.addEventListener("pointerdown", event => {
+    event.stopPropagation();
+  });
+
+  resetViewButton.addEventListener("touchstart", handleResetButton, { passive: false });
+  resetViewButton.addEventListener("click", handleResetButton);
+}
 
 async function init() {
   await loadCoreData();
