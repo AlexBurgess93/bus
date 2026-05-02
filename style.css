@@ -35,7 +35,8 @@ main {
   position: relative;
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 76px);
+  height: 100vh;
+  height: 100dvh;
   min-height: 0;
 }
 
@@ -282,22 +283,6 @@ main {
 }
 
 @media (max-width: 640px) {
-  header {
-    padding: 12px 14px;
-  }
-
-  header h1 {
-    font-size: 18px;
-  }
-
-  header p {
-    font-size: 12px;
-  }
-
-  main {
-    height: calc(100vh - 61px);
-  }
-
   .selection-panel {
     flex-basis: min(20vh, 146px);
     min-height: 118px;

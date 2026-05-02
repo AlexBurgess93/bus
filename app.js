@@ -32,6 +32,11 @@ let stopMarkersByStopId = {};
 let stopRouteLines = [];
 let latestTripPositionsByTripId = {};
 let selectedPanelType = null;
+let activeTripIdsGlobal = new Set();
+let serviceDayOffsetSeconds = 0;
+let busUpdateTimerId = null;
+let busUpdateTimerId = null;
+let hasWarnedAboutNoActiveTrips = false;
 
 const selectionPanel = document.getElementById("selectionPanel");
 const selectionPanelContent = document.getElementById("selectionPanelContent");
@@ -135,7 +140,7 @@ function renderBusPanel(trip) {
 
   const latestPosition = latestTripPositionsByTripId[trip.tripId];
   const betweenText = latestPosition
-    ? `${latestPosition.stopA.name} → ${latestPosition.stopB.name}`
+    ? `${latestPosition.stopA?.name || "Unknown stop"} → ${latestPosition.stopB?.name || "Unknown stop"}`
     : "Between stops unavailable";
 
   selectionPanelContent.innerHTML = `
@@ -402,11 +407,19 @@ function drawStopUpcomingPaths(upcomingItems) {
 }
 
 function timeToSeconds(timeString) {
+  if (!timeString || typeof timeString !== "string") return NaN;
+
   const [hours, minutes, seconds] = timeString.split(":").map(Number);
+
+  if ([hours, minutes, seconds].some(value => Number.isNaN(value))) {
+    return NaN;
+  }
+
+  // GTFS can legally use times past midnight, e.g. 24:12:00 or 25:03:00.
   return hours * 3600 + minutes * 60 + seconds;
 }
 
-function getCurrentSecondsPrecise() {
+function getClockSecondsPrecise() {
   const now = new Date();
 
   return (
@@ -415,6 +428,52 @@ function getCurrentSecondsPrecise() {
     now.getSeconds() +
     now.getMilliseconds() / 1000
   );
+}
+
+function getCurrentSecondsPrecise() {
+  return getClockSecondsPrecise() + serviceDayOffsetSeconds;
+}
+
+function tripIsActiveAtSeconds(trip, currentSeconds) {
+  if (!trip?.stops?.length) return false;
+
+  const firstStopTime = timeToSeconds(trip.stops[0].departureTime);
+  const lastStopTime = timeToSeconds(trip.stops[trip.stops.length - 1].arrivalTime);
+
+  if (Number.isNaN(firstStopTime) || Number.isNaN(lastStopTime)) return false;
+
+  return currentSeconds >= firstStopTime && currentSeconds <= lastStopTime;
+}
+
+function countActiveTripsAtSeconds(currentSeconds) {
+  let count = 0;
+
+  timetableTrips.forEach(trip => {
+    if (tripIsActiveAtSeconds(trip, currentSeconds)) {
+      count += 1;
+    }
+  });
+
+  return count;
+}
+
+function chooseServiceDayOffset() {
+  const clockSeconds = getClockSecondsPrecise();
+  const activeToday = countActiveTripsAtSeconds(clockSeconds);
+  const activeAfterMidnightService = countActiveTripsAtSeconds(clockSeconds + 86400);
+
+  // This matters after midnight because GTFS often represents 12:30am as 24:30:00,
+  // while the device clock says 00:30:00.
+  if (activeToday === 0 && activeAfterMidnightService > 0) {
+    serviceDayOffsetSeconds = 86400;
+  } else {
+    serviceDayOffsetSeconds = 0;
+  }
+
+  console.log("Clock seconds:", Math.round(clockSeconds));
+  console.log("Service day offset seconds:", serviceDayOffsetSeconds);
+  console.log("Active trips at clock time:", activeToday);
+  console.log("Active trips at GTFS after-midnight time:", activeAfterMidnightService);
 }
 
 function createStopLookup(stops) {
@@ -645,14 +704,54 @@ function formatMinutesAway(arrivalSeconds, currentSeconds) {
 function getUpcomingForStop(stopId, minutesAhead = 30) {
   const currentSeconds = getCurrentSecondsPrecise();
   const maxSeconds = currentSeconds + minutesAhead * 60;
+  const duplicateWindowSeconds = 120;
 
   const upcoming = stopUpcoming[stopId] || [];
 
-  return upcoming
+  const timeValidItems = upcoming
     .filter(item => {
       const arrivalSeconds = timeToSeconds(item.arrivalTime);
       return arrivalSeconds >= currentSeconds && arrivalSeconds <= maxSeconds;
     })
+    .sort((a, b) => timeToSeconds(a.arrivalTime) - timeToSeconds(b.arrivalTime));
+
+  const uniqueByTrip = [];
+  const seenTripIds = new Set();
+
+  timeValidItems.forEach(item => {
+    if (seenTripIds.has(item.tripId)) return;
+    seenTripIds.add(item.tripId);
+    uniqueByTrip.push(item);
+  });
+
+  const deduped = [];
+
+  uniqueByTrip.forEach(item => {
+    const arrivalSeconds = timeToSeconds(item.arrivalTime);
+
+    const duplicateIndex = deduped.findIndex(existing => {
+      const existingArrivalSeconds = timeToSeconds(existing.arrivalTime);
+      const sameRoute = existing.routeShortName === item.routeShortName;
+      const sameDestination = existing.headsign === item.headsign;
+      const sameShape = existing.shapeId === item.shapeId;
+      const closeArrival = Math.abs(existingArrivalSeconds - arrivalSeconds) <= duplicateWindowSeconds;
+
+      return sameRoute && sameDestination && sameShape && closeArrival;
+    });
+
+    if (duplicateIndex === -1) {
+      deduped.push(item);
+      return;
+    }
+
+    const existingArrivalSeconds = timeToSeconds(deduped[duplicateIndex].arrivalTime);
+
+    if (arrivalSeconds < existingArrivalSeconds) {
+      deduped[duplicateIndex] = item;
+    }
+  });
+
+  return deduped
     .sort((a, b) => timeToSeconds(a.arrivalTime) - timeToSeconds(b.arrivalTime))
     .slice(0, 8);
 }
@@ -723,16 +822,15 @@ async function loadStops() {
 }
 
 function getTripPositionNow(trip, currentSeconds) {
-  const firstStopTime = timeToSeconds(trip.stops[0].departureTime);
-  const lastStopTime = timeToSeconds(trip.stops[trip.stops.length - 1].arrivalTime);
-
-  if (currentSeconds < firstStopTime || currentSeconds > lastStopTime) {
+  if (!tripIsActiveAtSeconds(trip, currentSeconds)) {
     return null;
   }
 
   for (let i = 0; i < trip.stops.length - 1; i++) {
     const currentStopTime = timeToSeconds(trip.stops[i].departureTime);
     const nextStopTime = timeToSeconds(trip.stops[i + 1].arrivalTime);
+
+    if (Number.isNaN(currentStopTime) || Number.isNaN(nextStopTime)) continue;
 
     if (currentSeconds >= currentStopTime && currentSeconds <= nextStopTime) {
       const stopA = stopLookup[trip.stops[i].stopId];
@@ -831,7 +929,14 @@ function updateBusPositionsLive() {
     }
   });
 
-  requestAnimationFrame(updateBusPositionsLive);
+  if (activeTripIds.size > 0) {
+    hasWarnedAboutNoActiveTrips = false;
+  } else if (!hasWarnedAboutNoActiveTrips) {
+    console.warn(
+      "No active timetable trips found for the current device time. Stops can still render while buses are empty if no trip is active right now."
+    );
+    hasWarnedAboutNoActiveTrips = true;
+  }
 }
 
 map.on("click", () => {
@@ -860,7 +965,11 @@ async function init() {
   await loadCoreData();
   await loadStops();
 
-  requestAnimationFrame(updateBusPositionsLive);
+  updateBusPositionsLive();
+
+  busUpdateTimerId = window.setInterval(() => {
+    updateBusPositionsLive();
+  }, 1000);
 }
 
 init().catch(err => console.error(err));
