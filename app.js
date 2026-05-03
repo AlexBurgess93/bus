@@ -86,6 +86,7 @@ let journeyStart = null;
 let journeyEnd = null;
 let journeyPickMode = null;
 let journeyRouteLines = [];
+let stopMapActionStopId = null;
 
 const trackingModeButtons = document.querySelectorAll(".tracking-mode-button");
 
@@ -102,6 +103,12 @@ const LIVE_NOTICE_SEEN_KEY = "tripTrackerLiveNoticeSeen";
 const locateUserButton = document.getElementById("locateUserButton");
 const themeToggleButton = document.getElementById("themeToggleButton");
 const themeToggleIcon = document.getElementById("themeToggleIcon");
+const journeyOverlay = document.getElementById("journeyOverlay");
+const journeyStartValue = document.getElementById("journeyStartValue");
+const journeyEndValue = document.getElementById("journeyEndValue");
+const journeyClearButton = document.getElementById("journeyClearButton");
+const stopMapAction = document.getElementById("stopMapAction");
+
 
 
 
@@ -637,11 +644,6 @@ function renderStopPanel(stop, upcomingItems) {
         ${routeStripHTML}
       </div>
 
-      <div class="journey-action-row" aria-label="Journey planning actions">
-        <button class="journey-action-button journey-start-button" type="button">Set as start</button>
-        <button class="journey-action-button journey-destination-button" type="button">Set as destination</button>
-      </div>
-
       <div class="arrival-strip" aria-label="Upcoming services">
         ${upcomingHTML}
       </div>
@@ -661,24 +663,7 @@ function renderStopPanel(stop, upcomingItems) {
     });
   }
 
-  const startButton = selectionPanelContent.querySelector(".journey-start-button");
-  const destinationButton = selectionPanelContent.querySelector(".journey-destination-button");
-
-  if (startButton) {
-    startButton.addEventListener("click", event => {
-      event.preventDefault();
-      event.stopPropagation();
-      setJourneyStartFromStop(stop);
-    });
-  }
-
-  if (destinationButton) {
-    destinationButton.addEventListener("click", event => {
-      event.preventDefault();
-      event.stopPropagation();
-      setJourneyEndFromStop(stop);
-    });
-  }
+  showStopMapAction(stop);
 
   selectionPanelContent.querySelectorAll(".arrival-pill").forEach(button => {
     const selectUpcomingTrip = event => {
@@ -1411,12 +1396,116 @@ function getJourneyStartStopId() {
   return journeyStart.type === "gps" ? journeyStart.nearestStopId : journeyStart.stopId;
 }
 
+function getStopDisplayName(stopId, fallback = "Not set") {
+  const stop = stopLookup[stopId];
+  return stop?.name || fallback;
+}
+
+function renderJourneyOverlay() {
+  if (!journeyOverlay) return;
+
+  const startStopId = getJourneyStartStopId();
+  const endStopId = journeyEnd?.stopId || null;
+  const hasJourneyState = Boolean(startStopId || endStopId || journeyPickMode);
+
+  journeyOverlay.classList.toggle("is-hidden", !hasJourneyState);
+
+  if (journeyStartValue) {
+    journeyStartValue.textContent = startStopId
+      ? getStopDisplayName(startStopId, "Nearest stop near you")
+      : "Use your location or choose start";
+  }
+
+  if (journeyEndValue) {
+    journeyEndValue.textContent = endStopId
+      ? getStopDisplayName(endStopId, "Destination")
+      : "Tap a stop destination";
+  }
+}
+
+function hideStopMapAction() {
+  stopMapActionStopId = null;
+  if (stopMapAction) stopMapAction.classList.add("is-hidden");
+}
+
+function getStopMapActionHTML(stop) {
+  if (journeyPickMode === "start") {
+    return `<button class="stop-map-action-button" type="button" data-stop-map-action="start">Set as start</button>`;
+  }
+
+  if (getJourneyStartStopId()) {
+    return `<button class="stop-map-action-button" type="button" data-stop-map-action="destination">Set destination</button>`;
+  }
+
+  return `
+    <div class="stop-map-action-stack">
+      <button class="stop-map-action-button stop-map-action-secondary" type="button" data-stop-map-action="start">Start here</button>
+      <button class="stop-map-action-button" type="button" data-stop-map-action="destination">Set destination</button>
+    </div>
+  `;
+}
+
+function positionStopMapAction(stop) {
+  if (!stopMapAction || !stop) return;
+
+  const point = map.latLngToContainerPoint([stop.lat, stop.lon]);
+  stopMapAction.style.left = `${point.x}px`;
+  stopMapAction.style.top = `${point.y}px`;
+}
+
+function showStopMapAction(stop) {
+  if (!stopMapAction || !stop) return;
+
+  stopMapActionStopId = stop.id;
+  stopMapAction.innerHTML = getStopMapActionHTML(stop);
+  stopMapAction.classList.remove("is-hidden");
+  positionStopMapAction(stop);
+}
+
+function handleStopMapAction(action) {
+  const stop = stopLookup[stopMapActionStopId];
+  if (!stop) return;
+
+  if (action === "start" || journeyPickMode === "start") {
+    setJourneyStartFromStop(stop);
+    return;
+  }
+
+  setJourneyEndFromStop(stop);
+}
+
+function fitJourneyBounds(options = []) {
+  const bounds = [];
+  const startStop = stopLookup[getJourneyStartStopId()];
+  const endStop = stopLookup[journeyEnd?.stopId];
+
+  if (startStop) bounds.push([startStop.lat, startStop.lon]);
+  if (endStop) bounds.push([endStop.lat, endStop.lon]);
+
+  options.slice(0, 3).forEach(option => {
+    const shapeCoords = allShapes[option.shapeId];
+    if (!shapeCoords?.length) return;
+    shapeCoords.forEach(coord => bounds.push(coord));
+  });
+
+  if (bounds.length < 2) return;
+
+  map.fitBounds(L.latLngBounds(bounds), {
+    paddingTopLeft: [28, 120],
+    paddingBottomRight: [28, 210],
+    maxZoom: 16,
+    animate: true
+  });
+}
+
 function setJourneyStartFromStop(stop) {
   journeyStart = {
     type: "stop",
     stopId: stop.id
   };
   journeyPickMode = null;
+  hideStopMapAction();
+  renderJourneyOverlay();
 
   if (journeyEnd) {
     showJourneyOptions();
@@ -1424,6 +1513,7 @@ function setJourneyStartFromStop(stop) {
   }
 
   renderJourneyPrompt("Start set", "Now tap a destination stop.", "end");
+  renderJourneyOverlay();
 }
 
 function setJourneyEndFromStop(stop) {
@@ -1431,6 +1521,8 @@ function setJourneyEndFromStop(stop) {
     type: "stop",
     stopId: stop.id
   };
+  hideStopMapAction();
+  renderJourneyOverlay();
 
   if (userLocation?.nearestStopId) {
     journeyStart = {
@@ -1440,11 +1532,13 @@ function setJourneyEndFromStop(stop) {
       nearestStopId: userLocation.nearestStopId
     };
     journeyPickMode = null;
+    renderJourneyOverlay();
     showJourneyOptions();
     return;
   }
 
   journeyPickMode = "start";
+  renderJourneyOverlay();
   renderJourneyPrompt("Destination set", `Tap your starting stop, or use your location.`, "start");
   highlightJourneyMarkers();
 }
@@ -1506,6 +1600,8 @@ function clearJourneyPlan() {
   journeyEnd = null;
   journeyPickMode = null;
   clearJourneyRouteLines();
+  hideStopMapAction();
+  renderJourneyOverlay();
 }
 
 function findDirectJourneyOptions(originStopId, destinationStopId) {
@@ -1723,7 +1819,9 @@ function showJourneyOptions() {
 
   drawJourneyOptionPaths(options);
   highlightJourneyMarkers();
+  fitJourneyBounds(options);
   renderJourneyResultsPanel(options);
+  renderJourneyOverlay();
 }
 
 
@@ -2271,9 +2369,17 @@ function clearBusFocus() {
 }
 
 function resetAppView() {
-  clearJourneyPlan();
+  hideStopMapAction();
   clearBusFocus();
   hideSelectionPanel();
+
+  if (journeyStart || journeyEnd) {
+    renderJourneyOverlay();
+    highlightJourneyMarkers();
+    return;
+  }
+
+  clearJourneyRouteLines();
   updateNetworkLayer();
 }
 
@@ -2391,7 +2497,7 @@ function showLocationMessage(title, message) {
 function focusUserLocation(lat, lon) {
   clearBusFocus();
 
-  showLocationMessage("Your location", "You are centred on the map. Zoom or tap a nearby stop to explore services.");
+  showLocationMessage("Start set from your location", "Nearest stop selected in the background. Tap a stop, then set it as your destination.");
 
   map.setView([lat, lon], Math.max(map.getZoom(), 16), {
     animate: true
@@ -2445,13 +2551,18 @@ function requestUserLocation(options = {}) {
 
       updateUserLocationMarker(lat, lon);
 
-      if (options.useAsJourneyStart && nearestStop) {
+      if (nearestStop) {
         journeyStart = {
           type: "gps",
           lat,
           lon,
           nearestStopId: nearestStop.id
         };
+        if (journeyPickMode === "start") journeyPickMode = null;
+        renderJourneyOverlay();
+      }
+
+      if (nearestStop && (options.useAsJourneyStart || journeyEnd)) {
         journeyPickMode = null;
         showJourneyOptions();
         return;
@@ -2891,6 +3002,30 @@ if (themeToggleButton) {
   }, { passive: true });
 }
 
+if (journeyClearButton) {
+  journeyClearButton.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    clearJourneyPlan();
+    resetAppView();
+  });
+}
+
+if (stopMapAction) {
+  stopMapAction.addEventListener("click", event => {
+    const button = event.target.closest("[data-stop-map-action]");
+    if (!button) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    handleStopMapAction(button.dataset.stopMapAction);
+  });
+
+  stopMapAction.addEventListener("touchstart", event => {
+    event.stopPropagation();
+  }, { passive: true });
+}
+
 if (locateUserButton) {
   locateUserButton.addEventListener("click", event => {
     event.preventDefault();
@@ -2912,6 +3047,7 @@ map.on("moveend zoomend", () => {
   isMapMoving = false;
   document.body.classList.remove("is-map-moving");
   refreshMapAfterInteraction();
+  if (stopMapActionStopId) positionStopMapAction(stopLookup[stopMapActionStopId]);
 });
 
 map.on("click", () => {
@@ -2961,6 +3097,7 @@ async function init() {
   renderDefaultContextPanel();
   await loadStops();
   applyStopHitAreaStylesForZoom();
+  renderJourneyOverlay();
 
   map.invalidateSize();
   updateBusPositionsLive();

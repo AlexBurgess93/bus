@@ -2145,3 +2145,208 @@ html[data-map-theme="dark"] .journey-plan-label,
 html[data-map-theme="dark"] .journey-option-time {
   color: #a1a1aa;
 }
+
+/* Journey overlay: Uber-style from/to fields above the map base */
+.journey-overlay {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: calc(clamp(136px, 22vh, 190px) + 12px);
+  z-index: 940;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  gap: 6px 8px;
+  padding: 10px 10px;
+  border: 1px solid rgba(226, 232, 240, 0.96);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(12px);
+  pointer-events: auto;
+}
+
+.journey-overlay.is-hidden {
+  display: none;
+}
+
+.journey-field {
+  grid-column: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 9px;
+  padding: 7px 9px;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.journey-field-start {
+  grid-row: 1;
+}
+
+.journey-field-end {
+  grid-row: 2;
+}
+
+.journey-field-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.journey-field-dot-start {
+  background: #10b981;
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.14);
+}
+
+.journey-field-dot-end {
+  background: #2563eb;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14);
+}
+
+.journey-field-text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.journey-field-label {
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.journey-field-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 900;
+  color: #0f172a;
+}
+
+.journey-overlay-clear {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #0f172a;
+  font-size: 25px;
+  line-height: 34px;
+  font-weight: 650;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.stop-map-action {
+  position: absolute;
+  z-index: 980;
+  transform: translate(-50%, calc(-100% - 18px));
+  pointer-events: auto;
+}
+
+.stop-map-action.is-hidden {
+  display: none;
+}
+
+.stop-map-action-button {
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 950;
+  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.28);
+  cursor: pointer;
+  touch-action: manipulation;
+  white-space: nowrap;
+}
+
+.stop-map-action-button:active,
+.journey-overlay-clear:active {
+  transform: scale(0.96);
+}
+
+@media (max-width: 640px) {
+  .journey-overlay {
+    left: 10px;
+    right: 10px;
+    bottom: calc(clamp(136px, 22vh, 190px) + 10px);
+    border-radius: 18px;
+    padding: 8px;
+  }
+
+  .journey-field {
+    padding: 6px 8px;
+  }
+
+  .journey-field-value {
+    font-size: 12px;
+  }
+
+  .stop-map-action-button {
+    padding: 9px 12px;
+    font-size: 12px;
+  }
+}
+
+html[data-map-theme="dark"] .journey-overlay {
+  background: rgba(24, 24, 27, 0.94);
+  border-color: rgba(82, 82, 91, 0.9);
+}
+
+html[data-map-theme="dark"] .journey-field {
+  background: rgba(39, 39, 42, 0.95);
+}
+
+html[data-map-theme="dark"] .journey-field-value {
+  color: #f4f4f5;
+}
+
+html[data-map-theme="dark"] .journey-field-label {
+  color: #a1a1aa;
+}
+
+html[data-map-theme="dark"] .journey-overlay-clear {
+  background: rgba(63, 63, 70, 0.95);
+  color: #f4f4f5;
+}
+
+.stop-map-action-stack {
+  display: flex;
+  gap: 7px;
+  padding: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(226, 232, 240, 0.96);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(10px);
+}
+
+.stop-map-action-secondary {
+  background: #eff6ff;
+  color: #1d4ed8;
+  box-shadow: none;
+  border: 1px solid #bfdbfe;
+}
+
+html[data-map-theme="dark"] .stop-map-action-stack {
+  background: rgba(24, 24, 27, 0.94);
+  border-color: rgba(82, 82, 91, 0.9);
+}
+
+html[data-map-theme="dark"] .stop-map-action-secondary {
+  background: rgba(30, 41, 59, 0.98);
+  border-color: rgba(59, 130, 246, 0.65);
+  color: #bfdbfe;
+}

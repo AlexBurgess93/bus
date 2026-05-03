@@ -31,6 +31,26 @@
       </div>
     </div>
 
+    <section id="journeyOverlay" class="journey-overlay is-hidden" aria-live="polite">
+      <div class="journey-field journey-field-start">
+        <span class="journey-field-dot journey-field-dot-start"></span>
+        <div class="journey-field-text">
+          <span class="journey-field-label">From</span>
+          <span id="journeyStartValue" class="journey-field-value">Use your location</span>
+        </div>
+      </div>
+      <div class="journey-field journey-field-end">
+        <span class="journey-field-dot journey-field-dot-end"></span>
+        <div class="journey-field-text">
+          <span class="journey-field-label">To</span>
+          <span id="journeyEndValue" class="journey-field-value">Tap a stop destination</span>
+        </div>
+      </div>
+      <button id="journeyClearButton" class="journey-overlay-clear" type="button" aria-label="Clear journey plan">×</button>
+    </section>
+
+    <div id="stopMapAction" class="stop-map-action is-hidden" aria-live="polite"></div>
+
     <aside id="selectionPanel" class="selection-panel" aria-live="polite">
       <button id="closeSelectionPanelButton" class="panel-close-button" type="button" aria-label="Clear selection">
         ×
