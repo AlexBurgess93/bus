@@ -1935,6 +1935,38 @@ html[data-map-theme="dark"] .between-arrow-icon {
   }
 }
 
+.journey-approach-flow-line {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  animation: route-flow-forward 1.35s linear infinite;
+}
+
+.journey-selected-solid-line,
+.journey-preview-route-line {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.journey-stop-time-marker {
+  pointer-events: none;
+}
+
+.journey-stop-time-marker span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.9);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 950;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.22);
+  white-space: nowrap;
+}
+
 /* Journey planner controls */
 .journey-panel-section {
   gap: 9px;
@@ -2044,6 +2076,16 @@ html[data-map-theme="dark"] .between-arrow-icon {
   background: #ffffff;
 }
 
+.selection-panel.journey-options-mode {
+  padding-right: 16px;
+}
+
+.selection-panel.journey-options-mode .panel-close-button {
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+}
+
 .journey-options-strip {
   display: flex;
   align-items: center;
@@ -2052,7 +2094,7 @@ html[data-map-theme="dark"] .between-arrow-icon {
   height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 4px 2px 8px;
+  padding: 4px 54px 8px 2px;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
 }
@@ -2071,7 +2113,7 @@ html[data-map-theme="dark"] .between-arrow-icon {
     "badge badge";
   align-items: center;
   gap: 3px 8px;
-  width: clamp(172px, 58vw, 230px);
+  width: clamp(190px, 64vw, 250px);
   min-height: 70px;
   padding: 8px 9px;
   border: 1px solid #d1d5db;
@@ -2138,8 +2180,8 @@ html[data-map-theme="dark"] .between-arrow-icon {
   justify-self: start;
   padding: 3px 7px;
   border-radius: 999px;
-  background: #ede9fe;
-  color: #6d28d9;
+  background: rgba(15, 23, 42, 0.08);
+  color: #0f172a;
   font-size: 10px;
   font-weight: 900;
 }
@@ -2199,6 +2241,16 @@ html[data-map-theme="dark"] .journey-option-time {
   color: #a1a1aa;
 }
 
+html[data-map-theme="dark"] .journey-option-badge {
+  background: rgba(244, 244, 245, 0.12);
+  color: #f4f4f5;
+}
+
+html[data-map-theme="dark"] .journey-stop-time-marker span {
+  background: rgba(244, 244, 245, 0.92);
+  color: #111827;
+}
+
 
 /* Layer order: map < Leaflet attribution < journey overlay < bottom context panel.
    This keeps the peeking journey card tucked behind the bottom panel while still visible over the map. */
@@ -2239,7 +2291,7 @@ html[data-map-theme="dark"] .journey-option-time {
 }
 
 .journey-overlay.is-peeking {
-  transform: translateY(calc(100% - 46px));
+  transform: translateY(calc(100% - 30px));
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
 }
 
@@ -2417,7 +2469,7 @@ html[data-map-theme="dark"] .journey-option-time {
   }
 
   .journey-overlay.is-peeking {
-    transform: translateY(calc(100% - 42px));
+    transform: translateY(calc(100% - 26px));
   }
 
   .journey-field {

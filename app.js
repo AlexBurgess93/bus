@@ -86,6 +86,7 @@ let journeyStart = null;
 let journeyEnd = null;
 let journeyPickMode = null;
 let journeyRouteLines = [];
+let journeyStopTimeMarkers = [];
 let journeyOverlayCollapseTimer = null;
 let selectedJourneyOptionTripId = null;
 let latestJourneyOptions = [];
@@ -186,6 +187,7 @@ function showSelectionPanel() {
 
 function hideSelectionPanel() {
   selectionPanel.classList.remove("has-selection");
+  selectionPanel.classList.remove("journey-options-mode");
   selectedPanelType = null;
   renderDefaultContextPanel();
 }
@@ -596,6 +598,7 @@ function getTransportAriaLabel(item = {}) {
 
 // ---------- Stop and service detail panels ----------
 function renderStopPanel(stop, upcomingItems) {
+  selectionPanel.classList.remove("journey-options-mode");
   selectedPanelType = "stop";
 
   const routesForStop = getRoutesForStop(stop.id);
@@ -1403,7 +1406,12 @@ function clearJourneyRouteLines() {
     map.removeLayer(line);
   });
 
+  journeyStopTimeMarkers.forEach(marker => {
+    map.removeLayer(marker);
+  });
+
   journeyRouteLines = [];
+  journeyStopTimeMarkers = [];
 }
 
 function getJourneyStartStopId() {
@@ -1552,18 +1560,24 @@ function fitJourneyBounds(options = []) {
   if (startStop) bounds.push([startStop.lat, startStop.lon]);
   if (endStop) bounds.push([endStop.lat, endStop.lon]);
 
-  options.slice(0, 3).forEach(option => {
+  options.slice(0, 5).forEach(option => {
     const shapeCoords = allShapes[option.shapeId];
-    if (!shapeCoords?.length) return;
-    shapeCoords.forEach(coord => bounds.push(coord));
+    if (!shapeCoords?.length || !startStop || !endStop) return;
+
+    getShapeSegmentBetweenStops(shapeCoords, startStop, endStop).forEach(coord => bounds.push(coord));
+
+    const busLatLng = getJourneyOptionLiveLatLng(option);
+    if (busLatLng) {
+      getShapeSegmentToStop(shapeCoords, busLatLng, startStop).forEach(coord => bounds.push(coord));
+    }
   });
 
   if (bounds.length < 2) return;
 
   map.fitBounds(L.latLngBounds(bounds), {
     paddingTopLeft: [28, 120],
-    paddingBottomRight: [28, 210],
-    maxZoom: 16,
+    paddingBottomRight: [28, 260],
+    maxZoom: 15,
     animate: true
   });
 }
@@ -1614,6 +1628,7 @@ function setJourneyEndFromStop(stop) {
 }
 
 function renderJourneyPrompt(title, message, mode) {
+  selectionPanel.classList.remove("journey-options-mode");
   selectionPanelContent.innerHTML = `
     <section class="panel-section journey-panel-section">
       <div class="journey-prompt-card">
@@ -1786,6 +1801,141 @@ function getJourneyDelayColour(option) {
   return "#16a34a";
 }
 
+function getJourneyOptionLiveLatLng(option) {
+  const livePosition = latestLiveTripPositionsByTripId[option.tripId] || latestTripPositionsByTripId[option.tripId];
+  if (!livePosition) return null;
+
+  const busPoint = livePosition.position || livePosition.latLng || livePosition.coords || null;
+
+  if (Array.isArray(busPoint)) return busPoint;
+
+  if (livePosition.lat && livePosition.lon) return [livePosition.lat, livePosition.lon];
+  if (livePosition.latitude && livePosition.longitude) return [livePosition.latitude, livePosition.longitude];
+
+  return null;
+}
+
+function getMinutesUntilStopTime(stopTime) {
+  const seconds = timeToSeconds(stopTime?.arrivalTime || stopTime?.departureTime);
+  if (Number.isNaN(seconds)) return null;
+
+  return Math.max(0, Math.round((seconds - getCurrentSecondsPrecise()) / 60));
+}
+
+function formatJourneyMinuteBadgeFromSeconds(seconds) {
+  if (!Number.isFinite(seconds)) return "--";
+  const minutes = Math.max(0, Math.round((seconds - getCurrentSecondsPrecise()) / 60));
+  return `${minutes}m`;
+}
+
+function drawJourneyStopTimeLabels(option) {
+  const stops = option?.trip?.stops || [];
+  if (!stops.length) return;
+
+  stops.slice(option.originIndex, option.destinationIndex + 1).forEach((stopTime, index) => {
+    const stop = stopLookup[stopTime.stopId];
+    if (!stop) return;
+
+    const minutes = getMinutesUntilStopTime(stopTime);
+    if (minutes === null) return;
+
+    const marker = L.marker([stop.lat, stop.lon], {
+      interactive: false,
+      icon: L.divIcon({
+        className: "journey-stop-time-marker",
+        html: `<span>${index === 0 ? "Board" : `${minutes}m`}</span>`,
+        iconSize: [44, 22],
+        iconAnchor: [22, 28]
+      })
+    }).addTo(map);
+
+    journeyStopTimeMarkers.push(marker);
+  });
+}
+
+function drawJourneyOptionPreview(option) {
+  const shapeCoords = allShapes[option.shapeId];
+  const startStop = stopLookup[getJourneyStartStopId()];
+  const endStop = stopLookup[journeyEnd?.stopId];
+  const colour = getJourneyDelayColour(option);
+
+  if (!shapeCoords || !startStop || !endStop) return;
+
+  const journeySegment = getShapeSegmentBetweenStops(shapeCoords, startStop, endStop);
+
+  if (journeySegment.length >= 2) {
+    const journeyLine = L.polyline(journeySegment, {
+      renderer: routeFlowRenderer,
+      color: colour,
+      weight: 5,
+      opacity: 0.28,
+      lineCap: "round",
+      lineJoin: "round",
+      className: "journey-preview-route-line"
+    }).addTo(map);
+
+    journeyLine.bringToBack();
+    journeyRouteLines.push(journeyLine);
+  }
+
+  const busLatLng = getJourneyOptionLiveLatLng(option);
+
+  if (busLatLng) {
+    const approachSegment = getShapeSegmentToStop(shapeCoords, busLatLng, startStop);
+
+    if (approachSegment.length >= 2) {
+      const approachLine = L.polyline(approachSegment, {
+        renderer: routeFlowRenderer,
+        color: colour,
+        weight: 4,
+        opacity: 0.72,
+        dashArray: "6 14",
+        lineCap: "round",
+        lineJoin: "round",
+        className: "journey-approach-flow-line"
+      }).addTo(map);
+
+      approachLine.bringToBack();
+      journeyRouteLines.push(approachLine);
+    }
+  }
+}
+
+function drawAllJourneyOptionPreviews(options) {
+  clearJourneyRouteLines();
+  clearStopRouteLines();
+  clearRouteLine();
+  clearNetworkLayer();
+
+  options.forEach(drawJourneyOptionPreview);
+}
+
+function fitSelectedJourneyOptionBounds(option) {
+  const bounds = [];
+  const shapeCoords = allShapes[option.shapeId];
+  const startStop = stopLookup[getJourneyStartStopId()];
+  const endStop = stopLookup[journeyEnd?.stopId];
+  const busLatLng = getJourneyOptionLiveLatLng(option);
+
+  if (busLatLng) bounds.push(busLatLng);
+  if (startStop) bounds.push([startStop.lat, startStop.lon]);
+  if (endStop) bounds.push([endStop.lat, endStop.lon]);
+
+  if (shapeCoords && startStop && endStop) {
+    getShapeSegmentBetweenStops(shapeCoords, startStop, endStop).forEach(coord => bounds.push(coord));
+    if (busLatLng) getShapeSegmentToStop(shapeCoords, busLatLng, startStop).forEach(coord => bounds.push(coord));
+  }
+
+  if (bounds.length < 2) return;
+
+  map.fitBounds(L.latLngBounds(bounds), {
+    paddingTopLeft: [28, 120],
+    paddingBottomRight: [28, 260],
+    maxZoom: 15,
+    animate: true
+  });
+}
+
 function drawSelectedJourneyOption(option) {
   clearJourneyRouteLines();
   clearStopRouteLines();
@@ -1818,13 +1968,7 @@ function drawSelectedJourneyOption(option) {
     journeyRouteLines.push(journeyLine);
   }
 
-  const livePosition = latestLiveTripPositionsByTripId[option.tripId] || latestTripPositionsByTripId[option.tripId];
-  const busPoint = livePosition?.position || livePosition?.latLng || livePosition?.coords || null;
-  const busLatLng = Array.isArray(busPoint)
-    ? busPoint
-    : livePosition?.lat && livePosition?.lon
-      ? [livePosition.lat, livePosition.lon]
-      : null;
+  const busLatLng = getJourneyOptionLiveLatLng(option);
 
   if (busLatLng) {
     const approachSegment = getShapeSegmentToStop(shapeCoords, busLatLng, startStop);
@@ -1845,12 +1989,14 @@ function drawSelectedJourneyOption(option) {
       journeyRouteLines.push(approachLine);
     }
   }
+
+  drawJourneyStopTimeLabels(option);
 }
 
 function drawJourneyOptionPaths(options) {
-  selectedJourneyOptionTripId = options[0]?.tripId || null;
+  selectedJourneyOptionTripId = null;
   latestJourneyOptions = options;
-  drawSelectedJourneyOption(options[0]);
+  drawAllJourneyOptionPreviews(options);
 }
 
 function selectJourneyOption(tripId) {
@@ -1865,7 +2011,7 @@ function selectJourneyOption(tripId) {
   drawSelectedJourneyOption(option);
   highlightJourneyMarkers();
   renderJourneyResultsPanel(latestJourneyOptions);
-  fitJourneyBounds([option]);
+  fitSelectedJourneyOptionBounds(option);
 }
 
 function highlightJourneyMarkers() {
@@ -1917,16 +2063,18 @@ function highlightJourneyMarkers() {
 }
 
 function renderJourneyResultsPanel(options) {
+  selectionPanel.classList.add("journey-options-mode");
   const optionHTML = options.length
     ? options.map((option, index) => {
-        const isSelected = (selectedJourneyOptionTripId || options[0]?.tripId) === option.tripId;
+        const isSelected = selectedJourneyOptionTripId === option.tripId;
         const status = option.delayStatus || getDelayStatus(option.delaySeconds || 0);
+        const departureBadge = formatJourneyMinuteBadgeFromSeconds(option.departureSeconds);
         return `
           <button class="journey-option-pill ${isSelected ? "is-selected" : ""} ${escapeHTML(status.className)}" type="button" data-trip-id="${escapeHTML(option.tripId)}">
             <span class="journey-option-route ${escapeHTML(`arrival-route-${option.transportMode}`)}">${escapeHTML(option.routeLabel)}</span>
             <span class="journey-option-main">${escapeHTML(option.headsign || "Direct service")}</span>
             <span class="journey-option-time">${escapeHTML(formatScheduledClockTime(option.departureTime))} → ${escapeHTML(formatScheduledClockTime(option.arrivalTime))}</span>
-            <span class="journey-option-badge">${index === 0 ? "Soonest" : escapeHTML(status.text)}</span>
+            <span class="journey-option-badge">${escapeHTML(departureBadge)}</span>
           </button>
         `;
       }).join("")
@@ -1968,8 +2116,8 @@ function showJourneyOptions() {
 
   const options = findDirectJourneyOptions(originStopId, destinationStopId);
   latestJourneyOptions = options;
-  selectedJourneyOptionTripId = options[0]?.tripId || null;
-  highlightedTripIds = selectedJourneyOptionTripId ? new Set([selectedJourneyOptionTripId]) : new Set(options.map(option => option.tripId));
+  selectedJourneyOptionTripId = null;
+  highlightedTripIds = new Set(options.map(option => option.tripId));
   selectedTripId = null;
   selectedStopId = null;
 
