@@ -2126,6 +2126,18 @@ function highlightJourneyMarkers() {
   });
 }
 
+function scrollSelectedJourneyOptionIntoView() {
+  const strip = selectionPanelContent.querySelector(".journey-options-strip");
+  const selectedButton = selectionPanelContent.querySelector(".journey-option-pill.is-selected");
+  if (!strip || !selectedButton) return;
+
+  const targetLeft = Math.max(0, selectedButton.offsetLeft - strip.offsetLeft - 2);
+  strip.scrollTo({
+    left: targetLeft,
+    behavior: "smooth"
+  });
+}
+
 function renderJourneyResultsPanel(options) {
   selectionPanel.classList.add("journey-options-mode");
   const optionHTML = options.length
@@ -2160,6 +2172,9 @@ function renderJourneyResultsPanel(options) {
     });
   });
 
+  if (selectedJourneyOptionTripId) {
+    window.setTimeout(scrollSelectedJourneyOptionIntoView, 40);
+  }
 
   showSelectionPanel();
 }
@@ -2873,26 +2888,47 @@ function focusUserLocation(lat, lon) {
   });
 }
 
+function isUserLocationMaxZoom() {
+  const maxZoom = map.getMaxZoom ? map.getMaxZoom() : 19;
+  return map.getZoom() >= maxZoom - 1;
+}
+
+function createUserLocationIcon() {
+  const isLarge = isUserLocationMaxZoom();
+  const size = isLarge ? 56 : 34;
+  const coreSize = isLarge ? 34 : 12;
+  const pulseSize = isLarge ? 42 : 24;
+  const imageHTML = isLarge ? `<img src="current_location_pin.svg" alt="Your location">` : "";
+
+  return L.divIcon({
+    className: "",
+    html: `
+      <div class="user-location-marker ${isLarge ? "is-large" : "is-compact"}" style="--user-location-size:${size}px; --user-location-core:${coreSize}px; --user-location-pulse:${pulseSize}px;">
+        <div class="user-location-pulse"></div>
+        <div class="user-location-core">
+          ${imageHTML}
+        </div>
+      </div>
+    `,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2]
+  });
+}
+
+function refreshUserLocationIcon() {
+  if (!userLocationMarker) return;
+  userLocationMarker.setIcon(createUserLocationIcon());
+}
+
 function updateUserLocationMarker(lat, lon) {
   if (userLocationMarker) {
     userLocationMarker.setLatLng([lat, lon]);
+    refreshUserLocationIcon();
     return;
   }
 
   userLocationMarker = L.marker([lat, lon], {
-    icon: L.divIcon({
-      className: "",
-      html: `
-        <div class="user-location-marker">
-          <div class="user-location-pulse"></div>
-          <div class="user-location-core">
-            <img src="current_location_pin.svg" alt="Your location">
-          </div>
-        </div>
-      `,
-      iconSize: [56, 56],
-      iconAnchor: [28, 28]
-    }),
+    icon: createUserLocationIcon(),
     zIndexOffset: 2200,
     interactive: false
   }).addTo(map);
@@ -3460,6 +3496,7 @@ map.on("moveend zoomend", () => {
   isMapMoving = false;
   document.body.classList.remove("is-map-moving");
   refreshMapAfterInteraction();
+  refreshUserLocationIcon();
   if (stopMapActionStopId) positionStopMapAction(stopLookup[stopMapActionStopId]);
 });
 
