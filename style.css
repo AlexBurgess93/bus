@@ -191,8 +191,8 @@ main {
 }
 
 .arrival-pill.ahead {
-  background: #ecfdf5;
-  border-color: #bbf7d0;
+  background: #eff6ff;
+  border-color: #bfdbfe;
 }
 
 .arrival-pill.behind {
@@ -200,9 +200,14 @@ main {
   border-color: #fed7aa;
 }
 
+.arrival-pill.very-late {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
 .arrival-pill.on-time {
-  background: #f8fafc;
-  border-color: #d1d5db;
+  background: #ecfdf5;
+  border-color: #bbf7d0;
 }
 
 .arrival-pill:active {
@@ -225,15 +230,19 @@ main {
 }
 
 .arrival-pill.ahead .arrival-route {
-  background: #16a34a;
+  background: #2563eb;
 }
 
 .arrival-pill.behind .arrival-route {
   background: #f59e0b;
 }
 
+.arrival-pill.very-late .arrival-route {
+  background: #dc2626;
+}
+
 .arrival-pill.on-time .arrival-route {
-  background: #6b7280;
+  background: #16a34a;
 }
 
 .arrival-time {
@@ -245,15 +254,19 @@ main {
 }
 
 .arrival-pill.ahead .arrival-time {
-  color: #047857;
+  color: #1d4ed8;
 }
 
 .arrival-pill.behind .arrival-time {
   color: #c2410c;
 }
 
+.arrival-pill.very-late .arrival-time {
+  color: #b91c1c;
+}
+
 .arrival-pill.on-time .arrival-time {
-  color: #374151;
+  color: #047857;
 }
 
 .arrival-destination {
@@ -500,9 +513,9 @@ main {
 }
 
 .beta-delay-chip.ahead {
-  background: #ecfdf5;
-  color: #047857;
-  border: 1px solid #a7f3d0;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
 }
 
 .beta-delay-chip.behind {
@@ -511,10 +524,16 @@ main {
   border: 1px solid #fed7aa;
 }
 
+.beta-delay-chip.very-late {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
 .beta-delay-chip.on-time {
-  background: #f3f4f6;
-  color: #374151;
-  border: 1px solid #d1d5db;
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #bbf7d0;
 }
 
 .beta-delay-chip .delay-value {
@@ -563,8 +582,8 @@ main {
 }
 
 .live-bus-icon.ahead {
-  border-color: #10b981;
-  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.45);
+  border-color: #2563eb;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.42);
 }
 
 .live-bus-icon.behind {
@@ -572,21 +591,30 @@ main {
   box-shadow: 0 4px 14px rgba(249, 115, 22, 0.48);
 }
 
+.live-bus-icon.very-late {
+  border-color: #dc2626;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.46);
+}
+
 .live-bus-icon.on-time {
-  border-color: #6b7280;
-  box-shadow: 0 3px 10px rgba(107, 114, 128, 0.28);
+  border-color: #16a34a;
+  box-shadow: 0 4px 14px rgba(22, 163, 74, 0.42);
 }
 
 .live-bus-icon.ahead .bus-mode-label {
-  background: #047857;
+  background: #1d4ed8;
 }
 
 .live-bus-icon.behind .bus-mode-label {
   background: #c2410c;
 }
 
+.live-bus-icon.very-late .bus-mode-label {
+  background: #b91c1c;
+}
+
 .live-bus-icon.on-time .bus-mode-label {
-  background: #4b5563;
+  background: #047857;
 }
 
 
@@ -641,21 +669,25 @@ main {
 }
 
 .route-bus-marker.live.ahead {
-  color: #16a34a;
+  color: #2563eb;
 }
 
 .route-bus-marker.live.behind {
   color: #f97316;
 }
 
+.route-bus-marker.live.very-late {
+  color: #dc2626;
+}
+
 .route-bus-marker.live.on-time {
-  color: #6b7280;
+  color: #16a34a;
 }
 
 .route-bus-marker.live.ahead .route-bus-badge {
-  border-color: #16a34a;
-  color: #047857;
-  box-shadow: 0 4px 16px rgba(22, 163, 74, 0.42);
+  border-color: #2563eb;
+  color: #1d4ed8;
+  box-shadow: 0 4px 16px rgba(37, 99, 235, 0.38);
 }
 
 .route-bus-marker.live.behind .route-bus-badge {
@@ -664,10 +696,16 @@ main {
   box-shadow: 0 4px 16px rgba(249, 115, 22, 0.46);
 }
 
+.route-bus-marker.live.very-late .route-bus-badge {
+  border-color: #dc2626;
+  color: #b91c1c;
+  box-shadow: 0 4px 16px rgba(220, 38, 38, 0.44);
+}
+
 .route-bus-marker.live.on-time .route-bus-badge {
-  border-color: #6b7280;
-  color: #374151;
-  box-shadow: 0 3px 12px rgba(107, 114, 128, 0.28);
+  border-color: #16a34a;
+  color: #047857;
+  box-shadow: 0 4px 16px rgba(22, 163, 74, 0.42);
 }
 
 .route-bus-marker.selected .route-bus-badge {
@@ -787,7 +825,8 @@ main {
 }
 
 .ghost-route-segment.ahead,
-.ghost-route-segment.behind {
+.ghost-route-segment.behind,
+.ghost-route-segment.very-late {
   animation: ghost-dash-flow 1.25s linear infinite;
 }
 
@@ -992,8 +1031,8 @@ main {
 }
 
 .service-dot-marker.live.ahead {
-  background: #16a34a;
-  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.16), 0 2px 7px rgba(22, 163, 74, 0.36);
+  background: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16), 0 2px 7px rgba(37, 99, 235, 0.36);
 }
 
 .service-dot-marker.live.behind {
@@ -1001,8 +1040,14 @@ main {
   box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.16), 0 2px 7px rgba(249, 115, 22, 0.38);
 }
 
+.service-dot-marker.live.very-late {
+  background: #dc2626;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.16), 0 2px 7px rgba(220, 38, 38, 0.38);
+}
+
 .service-dot-marker.live.on-time {
-  background: #6b7280;
+  background: #16a34a;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.16), 0 2px 7px rgba(22, 163, 74, 0.36);
 }
 
 .service-dot-marker.scheduled {
@@ -1027,15 +1072,19 @@ main {
 }
 
 .service-dot-marker.transport-bus.live.ahead {
-  background: #16a34a;
+  background: #2563eb;
 }
 
 .service-dot-marker.transport-bus.live.behind {
   background: #f97316;
 }
 
+.service-dot-marker.transport-bus.live.very-late {
+  background: #dc2626;
+}
+
 .service-dot-marker.transport-bus.live.on-time {
-  background: #6b7280;
+  background: #16a34a;
 }
 
 .network-route-line {

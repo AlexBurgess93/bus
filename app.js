@@ -617,12 +617,23 @@ function getStableLiveDelaySeconds(tripId) {
 function getDelayStatus(delaySeconds) {
   const roundedMinutes = Math.round(Math.abs(delaySeconds) / 60);
 
+  // Colour is mapped to rider outcome, not just raw schedule maths:
+  // on-time is good, late is a warning/problem, early is informational.
   if (delaySeconds <= -60) {
     return {
       label: "Ahead",
       className: "ahead",
       text: `-${roundedMinutes} min`,
       detail: "ahead"
+    };
+  }
+
+  if (delaySeconds >= 300) {
+    return {
+      label: "Delayed",
+      className: "very-late",
+      text: `+${roundedMinutes} min`,
+      detail: "delayed"
     };
   }
 
@@ -638,7 +649,7 @@ function getDelayStatus(delaySeconds) {
   return {
     label: "On time",
     className: "on-time",
-    text: "±0 min",
+    text: "on time",
     detail: "on time"
   };
 }
@@ -646,9 +657,10 @@ function getDelayStatus(delaySeconds) {
 function getDelayColour(delaySeconds) {
   const status = getDelayStatus(delaySeconds);
 
-  if (status.className === "ahead") return "#16a34a";
+  if (status.className === "ahead") return "#2563eb";
+  if (status.className === "very-late") return "#dc2626";
   if (status.className === "behind") return "#f59e0b";
-  return "#6b7280";
+  return "#16a34a";
 }
 
 function getRoutePathColour() {
