@@ -1733,6 +1733,11 @@ function findDirectJourneyOptions(originStopId, destinationStopId) {
     if (!Number.isNaN(departureSeconds) && departureSeconds < currentSeconds - 120) return;
 
     const routeItem = upcomingByTripId.get(trip.tripId) || trip;
+    const candidateShapeId = trip.shapeId;
+
+    // Ignore reverse-direction matches. The stop times must be ordered AND the
+    // shape must move from the origin stop toward the destination stop.
+    if (!journeyOptionHasForwardShape({ shapeId: candidateShapeId }, originStopId, destinationStopId)) return;
 
     candidates.push({
       trip,
@@ -1769,18 +1774,18 @@ function findDirectJourneyOptions(originStopId, destinationStopId) {
 function getShapeSegmentBetweenStops(shapeCoords, startStop, endStop) {
   if (!shapeCoords?.length || !startStop || !endStop) return [];
 
-  let startIndex = findClosestShapeIndex(shapeCoords, startStop);
-  let endIndex = findClosestShapeIndex(shapeCoords, endStop);
+  const startIndex = findClosestShapeIndex(shapeCoords, startStop);
+  const endIndex = findClosestShapeIndex(shapeCoords, endStop);
 
   if (startIndex === endIndex) {
     return [[startStop.lat, startStop.lon], [endStop.lat, endStop.lon]];
   }
 
-  if (endIndex < startIndex) {
-    const temp = startIndex;
-    startIndex = endIndex;
-    endIndex = temp;
-  }
+  // Direction matters for journey planning. Do not auto-reverse the shape here,
+  // otherwise a reverse-direction service can be drawn as if it matched the trip.
+  // If the selected trip's shape is ordered the other way, this candidate is not
+  // useful for this direct A -> B preview and should be ignored.
+  if (endIndex < startIndex) return [];
 
   const segment = shapeCoords.slice(startIndex, endIndex + 1);
   segment[0] = [startStop.lat, startStop.lon];
@@ -1797,6 +1802,19 @@ function getShapeSegmentToStop(shapeCoords, fromPoint, endStop) {
   if (fromIndex === endIndex) return [fromPoint, [endStop.lat, endStop.lon]];
   if (fromIndex < endIndex) return [fromPoint, ...shapeCoords.slice(fromIndex + 1, endIndex + 1), [endStop.lat, endStop.lon]];
   return [fromPoint, ...shapeCoords.slice(endIndex, fromIndex).reverse(), [endStop.lat, endStop.lon]];
+}
+
+function journeyOptionHasForwardShape(option, originStopId, destinationStopId) {
+  const shapeCoords = allShapes[option?.shapeId];
+  const startStop = stopLookup[originStopId];
+  const endStop = stopLookup[destinationStopId];
+
+  if (!shapeCoords?.length || !startStop || !endStop) return false;
+
+  const startIndex = findClosestShapeIndex(shapeCoords, startStop);
+  const endIndex = findClosestShapeIndex(shapeCoords, endStop);
+
+  return endIndex > startIndex;
 }
 
 function getJourneyDelayColour(option) {
@@ -2054,7 +2072,7 @@ function unselectJourneyOption() {
   drawAllJourneyOptionPreviews(latestJourneyOptions);
   updateBusPositionsLive();
   highlightJourneyMarkers();
-  renderJourneyResultsPanel(latestJourneyOptions);
+  updateJourneyOptionSelectionUI();
   fitJourneyBounds(latestJourneyOptions);
 }
 
@@ -2074,7 +2092,7 @@ function selectJourneyOption(tripId) {
 
   updateBusPositionsLive();
   redrawSelectedJourneyOption();
-  renderJourneyResultsPanel(latestJourneyOptions);
+  updateJourneyOptionSelectionUI();
   fitSelectedJourneyOptionBounds(option);
 }
 
@@ -2131,11 +2149,27 @@ function scrollSelectedJourneyOptionIntoView() {
   const selectedButton = selectionPanelContent.querySelector(".journey-option-pill.is-selected");
   if (!strip || !selectedButton) return;
 
-  const targetLeft = Math.max(0, selectedButton.offsetLeft - strip.offsetLeft - 2);
+  const stripRect = strip.getBoundingClientRect();
+  const buttonRect = selectedButton.getBoundingClientRect();
+  const targetLeft = Math.max(0, strip.scrollLeft + (buttonRect.left - stripRect.left) - 2);
+
   strip.scrollTo({
     left: targetLeft,
     behavior: "smooth"
   });
+}
+
+function updateJourneyOptionSelectionUI() {
+  const strip = selectionPanelContent.querySelector(".journey-options-strip");
+  if (!strip) return;
+
+  strip.querySelectorAll(".journey-option-pill").forEach(button => {
+    button.classList.toggle("is-selected", button.getAttribute("data-trip-id") === selectedJourneyOptionTripId);
+  });
+
+  if (selectedJourneyOptionTripId) {
+    window.requestAnimationFrame(scrollSelectedJourneyOptionIntoView);
+  }
 }
 
 function renderJourneyResultsPanel(options) {
