@@ -2586,3 +2586,114 @@ html[data-map-theme="dark"] .journey-vehicle-label {
   border-color: #18181b;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.38);
 }
+
+/* Destination search upgrade */
+.journey-overlay {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.journey-overlay.is-hidden {
+  display: grid;
+}
+
+.journey-field-input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: #0f172a;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 900;
+  padding: 0;
+}
+
+.journey-field-input::placeholder {
+  color: #94a3b8;
+  font-weight: 850;
+}
+
+.journey-field-value.is-hidden-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.journey-overlay-show {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  align-self: center;
+  min-width: 72px;
+  height: 38px;
+  border: 0;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 950;
+  cursor: pointer;
+  touch-action: manipulation;
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.28);
+}
+
+.journey-overlay-show:active {
+  transform: scale(0.96);
+}
+
+.journey-search-status {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.journey-option-meta {
+  display: block;
+  grid-column: 2 / -1;
+  font-size: 10.5px;
+  font-weight: 850;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 640px) {
+  .journey-overlay {
+    grid-template-columns: minmax(0, 1fr) 34px 68px;
+    gap: 5px 6px;
+  }
+
+  .journey-overlay-show {
+    min-width: 68px;
+    height: 35px;
+    font-size: 11px;
+  }
+
+  .journey-field-input {
+    font-size: 12px;
+  }
+}
+
+html[data-map-theme="dark"] .journey-field-input {
+  color: #f4f4f5;
+}
+
+html[data-map-theme="dark"] .journey-field-input::placeholder {
+  color: #71717a;
+}
+
+html[data-map-theme="dark"] .journey-search-status {
+  background: rgba(39, 39, 42, 0.95);
+  border-color: rgba(82, 82, 91, 0.9);
+}
+
+html[data-map-theme="dark"] .journey-option-meta {
+  color: #a1a1aa;
+}

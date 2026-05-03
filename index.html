@@ -31,25 +31,25 @@
       </div>
     </div>
 
-    <section id="journeyOverlay" class="journey-overlay is-hidden" aria-live="polite">
-      <button id="journeyStartEditButton" class="journey-field journey-field-start" type="button" data-journey-edit="start" aria-label="Change start location">
+    <section id="journeyOverlay" class="journey-overlay" aria-live="polite">
+      <label class="journey-field journey-field-start" aria-label="Start location">
         <span class="journey-field-dot journey-field-dot-start"></span>
         <span class="journey-field-text">
           <span class="journey-field-label">From</span>
-          <span id="journeyStartValue" class="journey-field-value">Use your location</span>
+          <input id="journeyStartInput" class="journey-field-input" type="text" inputmode="search" autocomplete="off" placeholder="Use my location or enter start" />
+          <span id="journeyStartValue" class="journey-field-value is-hidden-text">Use your location</span>
         </span>
-        <span class="journey-field-edit-icon" aria-hidden="true">✎</span>
-      </button>
-      <button id="journeyEndEditButton" class="journey-field journey-field-end" type="button" data-journey-edit="end" aria-label="Change destination">
+      </label>
+      <label class="journey-field journey-field-end" aria-label="Destination">
         <span class="journey-field-dot journey-field-dot-end"></span>
         <span class="journey-field-text">
           <span class="journey-field-label">To</span>
-          <span id="journeyEndValue" class="journey-field-value">Tap a stop destination</span>
+          <input id="journeyEndInput" class="journey-field-input" type="text" inputmode="search" autocomplete="off" placeholder="Where to? e.g. Optus Stadium" />
+          <span id="journeyEndValue" class="journey-field-value is-hidden-text">Destination</span>
         </span>
-        <span class="journey-field-edit-icon" aria-hidden="true">✎</span>
-      </button>
+      </label>
       <button id="journeySwapButton" class="journey-overlay-swap" type="button" aria-label="Reverse start and destination"><img src="reverse_swap_path_icon.svg" alt="" aria-hidden="true" /></button>
-      <button id="journeyClearButton" class="journey-overlay-clear" type="button" aria-label="Clear journey plan">×</button>
+      <button id="journeySearchButton" class="journey-overlay-show" type="button" aria-label="Show journey options">Show me</button>
     </section>
 
     <div id="stopMapAction" class="stop-map-action is-hidden" aria-live="polite"></div>

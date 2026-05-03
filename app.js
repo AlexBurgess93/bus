@@ -110,10 +110,13 @@ const themeToggleIcon = document.getElementById("themeToggleIcon");
 const journeyOverlay = document.getElementById("journeyOverlay");
 const journeyStartValue = document.getElementById("journeyStartValue");
 const journeyEndValue = document.getElementById("journeyEndValue");
+const journeyStartInput = document.getElementById("journeyStartInput");
+const journeyEndInput = document.getElementById("journeyEndInput");
 const journeyStartEditButton = document.getElementById("journeyStartEditButton");
 const journeyEndEditButton = document.getElementById("journeyEndEditButton");
 const journeySwapButton = document.getElementById("journeySwapButton");
 const journeyClearButton = document.getElementById("journeyClearButton");
+const journeySearchButton = document.getElementById("journeySearchButton");
 const stopMapAction = document.getElementById("stopMapAction");
 
 
@@ -1418,7 +1421,121 @@ function clearJourneyRouteLines() {
 
 function getJourneyStartStopId() {
   if (!journeyStart) return null;
-  return journeyStart.type === "gps" ? journeyStart.nearestStopId : journeyStart.stopId;
+  return journeyStart.type === "gps" ? journeyStart.nearestStopId : (journeyStart.stopId || journeyStart.nearestStopId);
+}
+
+function getJourneyEndStopId() {
+  if (!journeyEnd) return null;
+  return journeyEnd.stopId || journeyEnd.nearestStopId || null;
+}
+
+function getJourneyStartLabel() {
+  if (!journeyStart) return "";
+  if (journeyStart.type === "gps") return "Your location";
+  return journeyStart.label || getStopDisplayName(getJourneyStartStopId(), "Start");
+}
+
+function getJourneyEndLabel() {
+  if (!journeyEnd) return "";
+  return journeyEnd.label || getStopDisplayName(getJourneyEndStopId(), "Destination");
+}
+
+const WALKING_METRES_PER_MINUTE = 80;
+const JOURNEY_NEARBY_STOP_LIMIT = 6;
+const JOURNEY_NEARBY_STOP_RADIUS_METRES = 1200;
+const PERTH_SEARCH_VIEWBOX = "115.55,-32.25,116.15,-31.65";
+
+function degreesToRadians(value) {
+  return value * Math.PI / 180;
+}
+
+function distanceMetresBetweenLatLon(lat1, lon1, lat2, lon2) {
+  const earthRadiusMetres = 6371000;
+  const dLat = degreesToRadians(lat2 - lat1);
+  const dLon = degreesToRadians(lon2 - lon1);
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+    + Math.cos(degreesToRadians(lat1)) * Math.cos(degreesToRadians(lat2))
+    * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return earthRadiusMetres * c;
+}
+
+function formatDistance(metres) {
+  if (!Number.isFinite(metres)) return "--";
+  if (metres >= 1000) return `${(metres / 1000).toFixed(1)}km`;
+  return `${Math.round(metres)}m`;
+}
+
+function estimateWalkingMinutes(metres) {
+  if (!Number.isFinite(metres)) return 0;
+  return Math.max(1, Math.ceil(metres / WALKING_METRES_PER_MINUTE));
+}
+
+function findNearestStops(lat, lon, limit = JOURNEY_NEARBY_STOP_LIMIT, maxMetres = JOURNEY_NEARBY_STOP_RADIUS_METRES) {
+  return Object.values(stopLookup)
+    .map(stop => ({
+      stop,
+      distanceMetres: distanceMetresBetweenLatLon(lat, lon, stop.lat, stop.lon)
+    }))
+    .filter(item => item.distanceMetres <= maxMetres)
+    .sort((a, b) => a.distanceMetres - b.distanceMetres)
+    .slice(0, limit);
+}
+
+function findNearestStopWithDistance(lat, lon) {
+  const nearest = findNearestStops(lat, lon, 1, Infinity)[0];
+  return nearest || null;
+}
+
+function showJourneySearchStatus(title, message) {
+  selectionPanel.classList.remove("journey-options-mode");
+  selectionPanelContent.innerHTML = `
+    <section class="panel-section journey-panel-section">
+      <div class="journey-search-status">
+        <div class="panel-title">${escapeHTML(title)}</div>
+        <div class="panel-subtitle">${escapeHTML(message)}</div>
+      </div>
+    </section>
+  `;
+  showSelectionPanel();
+}
+
+async function geocodeJourneyPlace(query) {
+  const cleaned = String(query || "").trim();
+  if (!cleaned) return null;
+
+  const searchText = /perth|western australia|wa/i.test(cleaned)
+    ? cleaned
+    : `${cleaned}, Perth, Western Australia`;
+
+  const params = new URLSearchParams({
+    format: "jsonv2",
+    q: searchText,
+    limit: "1",
+    countrycodes: "au",
+    viewbox: PERTH_SEARCH_VIEWBOX,
+    bounded: "0"
+  });
+
+  const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+    headers: { "Accept": "application/json" }
+  });
+
+  if (!response.ok) throw new Error("Location search failed");
+  const results = await response.json();
+  const first = Array.isArray(results) ? results[0] : null;
+  if (!first) return null;
+
+  return {
+    label: first.display_name?.split(",").slice(0, 2).join(",") || cleaned,
+    lat: Number(first.lat),
+    lon: Number(first.lon)
+  };
+}
+
+function setJourneyInputValues() {
+  if (journeyStartInput) journeyStartInput.value = getJourneyStartLabel();
+  if (journeyEndInput) journeyEndInput.value = getJourneyEndLabel();
 }
 
 function getStopDisplayName(stopId, fallback = "Not set") {
@@ -1444,7 +1561,7 @@ function scheduleJourneyOverlayPeek() {
   cancelJourneyOverlayPeekTimer();
 
   const startStopId = getJourneyStartStopId();
-  const endStopId = journeyEnd?.stopId || null;
+  const endStopId = getJourneyEndStopId() || null;
   const canPeek = Boolean(startStopId || endStopId) && !journeyPickMode && !journeyOverlay.classList.contains("is-hidden");
 
   if (!canPeek) {
@@ -1468,18 +1585,19 @@ function renderJourneyOverlay() {
   if (!journeyOverlay) return;
 
   const startStopId = getJourneyStartStopId();
-  const endStopId = journeyEnd?.stopId || null;
-  const hasJourneyState = Boolean(startStopId || endStopId || journeyPickMode);
+  const endStopId = getJourneyEndStopId();
 
-  journeyOverlay.classList.toggle("is-hidden", !hasJourneyState);
+  // The destination planner is now a permanent control. It can still peek/collapse,
+  // but it should not disappear just because no journey has been entered yet.
+  journeyOverlay.classList.remove("is-hidden");
 
   if (journeyStartValue) {
     const pickingStart = journeyPickMode === "start";
     journeyStartValue.textContent = pickingStart
       ? "Select on map"
       : startStopId
-        ? getStopDisplayName(startStopId, "Nearest stop near you")
-        : "Use your location or choose start";
+        ? getJourneyStartLabel()
+        : "Use my location or enter start";
     journeyStartValue.classList.toggle("is-placeholder", pickingStart || !startStopId);
   }
 
@@ -1488,9 +1606,17 @@ function renderJourneyOverlay() {
     journeyEndValue.textContent = pickingEnd
       ? "Select on map"
       : endStopId
-        ? getStopDisplayName(endStopId, "Destination")
-        : "Tap a stop destination";
+        ? getJourneyEndLabel()
+        : "Where to?";
     journeyEndValue.classList.toggle("is-placeholder", pickingEnd || !endStopId);
+  }
+
+  if (journeyStartInput && document.activeElement !== journeyStartInput) {
+    journeyStartInput.value = getJourneyStartLabel();
+  }
+
+  if (journeyEndInput && document.activeElement !== journeyEndInput) {
+    journeyEndInput.value = getJourneyEndLabel();
   }
 
   journeyStartEditButton?.classList.toggle("is-editing", journeyPickMode === "start");
@@ -1557,20 +1683,22 @@ function handleStopMapAction(action) {
 function fitJourneyBounds(options = []) {
   const bounds = [];
   const startStop = stopLookup[getJourneyStartStopId()];
-  const endStop = stopLookup[journeyEnd?.stopId];
+  const endStop = stopLookup[getJourneyEndStopId()];
 
   if (startStop) bounds.push([startStop.lat, startStop.lon]);
   if (endStop) bounds.push([endStop.lat, endStop.lon]);
 
   options.slice(0, 5).forEach(option => {
     const shapeCoords = allShapes[option.shapeId];
-    if (!shapeCoords?.length || !startStop || !endStop) return;
+    const optionStartStop = stopLookup[option.originStopId || getJourneyStartStopId()];
+    const optionEndStop = stopLookup[option.destinationStopId || getJourneyEndStopId()];
+    if (!shapeCoords?.length || !optionStartStop || !optionEndStop) return;
 
-    getShapeSegmentBetweenStops(shapeCoords, startStop, endStop).forEach(coord => bounds.push(coord));
+    getShapeSegmentBetweenStops(shapeCoords, optionStartStop, optionEndStop).forEach(coord => bounds.push(coord));
 
     const busLatLng = getJourneyOptionLiveLatLng(option);
     if (busLatLng) {
-      getShapeSegmentToStop(shapeCoords, busLatLng, startStop).forEach(coord => bounds.push(coord));
+      getShapeSegmentToStop(shapeCoords, busLatLng, optionStartStop).forEach(coord => bounds.push(coord));
     }
   });
 
@@ -1678,7 +1806,7 @@ function setJourneyPickMode(mode) {
 
 function swapJourneyDirection() {
   const startStopId = getJourneyStartStopId();
-  const endStopId = journeyEnd?.stopId || null;
+  const endStopId = getJourneyEndStopId() || null;
 
   if (!startStopId || !endStopId) return;
 
@@ -1711,10 +1839,101 @@ function clearJourneyPlan() {
   updateBusPositionsLive();
 }
 
-function findDirectJourneyOptions(originStopId, destinationStopId) {
-  if (!originStopId || !destinationStopId || originStopId === destinationStopId) return [];
+function getJourneyEndpointCoords(endpoint, stopId) {
+  if (endpoint?.lat && endpoint?.lon) return { lat: endpoint.lat, lon: endpoint.lon };
+  const stop = stopLookup[stopId];
+  if (stop) return { lat: stop.lat, lon: stop.lon };
+  return null;
+}
+
+function getNearbyStopCandidatesForEndpoint(endpoint, stopId) {
+  const coords = getJourneyEndpointCoords(endpoint, stopId);
+
+  if (!coords) {
+    const stop = stopLookup[stopId];
+    return stop ? [{ stop, distanceMetres: 0, walkingMinutes: 0 }] : [];
+  }
+
+  const candidates = findNearestStops(coords.lat, coords.lon);
+
+  if (candidates.length) {
+    return candidates.map(item => ({
+      ...item,
+      walkingMinutes: estimateWalkingMinutes(item.distanceMetres)
+    }));
+  }
+
+  const fallback = findNearestStopWithDistance(coords.lat, coords.lon);
+  return fallback ? [{
+    ...fallback,
+    walkingMinutes: estimateWalkingMinutes(fallback.distanceMetres)
+  }] : [];
+}
+
+function getJourneyStopCandidateLabel(candidate) {
+  if (!candidate?.stop) return "stop";
+  return `${cleanStopName(candidate.stop.name)} (${formatDistance(candidate.distanceMetres)} walk)`;
+}
+
+function findFastestJourneyOptions() {
+  const startStopId = getJourneyStartStopId();
+  const endStopId = getJourneyEndStopId();
+  if (!startStopId || !endStopId) return [];
 
   const currentSeconds = getCurrentSecondsPrecise();
+  const originCandidates = getNearbyStopCandidatesForEndpoint(journeyStart, startStopId);
+  const destinationCandidates = getNearbyStopCandidatesForEndpoint(journeyEnd, endStopId);
+  const allOptions = [];
+
+  originCandidates.forEach(originCandidate => {
+    destinationCandidates.forEach(destinationCandidate => {
+      if (!originCandidate.stop?.id || !destinationCandidate.stop?.id) return;
+      if (originCandidate.stop.id === destinationCandidate.stop.id) return;
+
+      findDirectJourneyOptions(originCandidate.stop.id, destinationCandidate.stop.id, {
+        earliestDepartureSeconds: currentSeconds + (originCandidate.walkingMinutes * 60)
+      }).forEach(option => {
+        const busMinutes = Math.max(0, Math.round((timeToSeconds(option.arrivalTime) - timeToSeconds(option.departureTime)) / 60));
+        const finalArrivalSeconds = timeToSeconds(option.arrivalTime) + (destinationCandidate.walkingMinutes * 60);
+        const totalMinutes = Math.max(1, Math.round((finalArrivalSeconds - currentSeconds) / 60));
+
+        allOptions.push({
+          ...option,
+          originStopId: originCandidate.stop.id,
+          destinationStopId: destinationCandidate.stop.id,
+          startWalkMetres: originCandidate.distanceMetres,
+          endWalkMetres: destinationCandidate.distanceMetres,
+          startWalkMinutes: originCandidate.walkingMinutes,
+          endWalkMinutes: destinationCandidate.walkingMinutes,
+          busMinutes,
+          finalArrivalSeconds,
+          totalMinutes,
+          originCandidateLabel: getJourneyStopCandidateLabel(originCandidate),
+          destinationCandidateLabel: getJourneyStopCandidateLabel(destinationCandidate)
+        });
+      });
+    });
+  });
+
+  const deduped = [];
+  const seen = new Set();
+
+  allOptions
+    .sort((a, b) => a.finalArrivalSeconds - b.finalArrivalSeconds || a.departureSeconds - b.departureSeconds)
+    .forEach(option => {
+      const key = `${option.tripId}|${option.originStopId}|${option.destinationStopId}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      deduped.push(option);
+    });
+
+  return deduped.slice(0, 8);
+}
+
+function findDirectJourneyOptions(originStopId, destinationStopId, options = {}) {
+  if (!originStopId || !destinationStopId || originStopId === destinationStopId) return [];
+
+  const currentSeconds = options.earliestDepartureSeconds ?? getCurrentSecondsPrecise();
   const upcomingByTripId = new Map((stopUpcoming[originStopId] || []).map(item => [item.tripId, item]));
   const candidates = [];
 
@@ -1906,8 +2125,8 @@ function drawJourneyVehicleLabel(option, latLng) {
 
 function drawJourneyOptionPreview(option) {
   const shapeCoords = allShapes[option.shapeId];
-  const startStop = stopLookup[getJourneyStartStopId()];
-  const endStop = stopLookup[journeyEnd?.stopId];
+  const startStop = stopLookup[option.originStopId || getJourneyStartStopId()];
+  const endStop = stopLookup[option.destinationStopId || getJourneyEndStopId()];
   const colour = getJourneyDelayColour(option);
 
   if (!shapeCoords || !startStop || !endStop) return;
@@ -1964,8 +2183,8 @@ function drawAllJourneyOptionPreviews(options) {
 function fitSelectedJourneyOptionBounds(option) {
   const bounds = [];
   const shapeCoords = allShapes[option.shapeId];
-  const startStop = stopLookup[getJourneyStartStopId()];
-  const endStop = stopLookup[journeyEnd?.stopId];
+  const startStop = stopLookup[option.originStopId || getJourneyStartStopId()];
+  const endStop = stopLookup[option.destinationStopId || getJourneyEndStopId()];
   const busLatLng = getJourneyOptionLiveLatLng(option);
 
   if (busLatLng) bounds.push(busLatLng);
@@ -1996,8 +2215,8 @@ function drawSelectedJourneyOption(option) {
   if (!option) return;
 
   const shapeCoords = allShapes[option.shapeId];
-  const startStop = stopLookup[getJourneyStartStopId()];
-  const endStop = stopLookup[journeyEnd?.stopId];
+  const startStop = stopLookup[option.originStopId || getJourneyStartStopId()];
+  const endStop = stopLookup[option.destinationStopId || getJourneyEndStopId()];
   const colour = getJourneyDelayColour(option);
 
   if (!shapeCoords || !startStop || !endStop) return;
@@ -2098,15 +2317,21 @@ function selectJourneyOption(tripId) {
 
 function highlightJourneyMarkers() {
   const startStopId = getJourneyStartStopId();
-  const endStopId = journeyEnd?.stopId || null;
+  const endStopId = getJourneyEndStopId() || null;
   const isCompleteJourney = Boolean(startStopId && endStopId && !journeyPickMode);
+  const visibleJourneyStopIds = new Set([startStopId, endStopId].filter(Boolean));
+
+  latestJourneyOptions.forEach(option => {
+    if (option.originStopId) visibleJourneyStopIds.add(option.originStopId);
+    if (option.destinationStopId) visibleJourneyStopIds.add(option.destinationStopId);
+  });
 
   applyDefaultStopMarkerStylesForZoom();
 
   Object.keys(stopMarkersByStopId).forEach(stopId => {
     const marker = stopMarkersByStopId[stopId];
 
-    if (isCompleteJourney && stopId !== startStopId && stopId !== endStopId) {
+    if (isCompleteJourney && !visibleJourneyStopIds.has(stopId)) {
       marker.setStyle({
         radius: 0,
         color: "transparent",
@@ -2118,7 +2343,11 @@ function highlightJourneyMarkers() {
       return;
     }
 
-    if (stopId === startStopId) {
+    const selectedOption = getSelectedJourneyOption();
+    const isSelectedBoardingStop = selectedOption?.originStopId === stopId;
+    const isSelectedAlightingStop = selectedOption?.destinationStopId === stopId;
+
+    if (stopId === startStopId || isSelectedBoardingStop) {
       marker.setStyle({
         radius: 9,
         color: "#047857",
@@ -2130,7 +2359,7 @@ function highlightJourneyMarkers() {
       marker.bringToFront();
     }
 
-    if (stopId === endStopId) {
+    if (stopId === endStopId || isSelectedAlightingStop) {
       marker.setStyle({
         radius: 9,
         color: "#6d28d9",
@@ -2184,11 +2413,12 @@ function renderJourneyResultsPanel(options) {
             <span class="journey-option-route ${escapeHTML(`arrival-route-${option.transportMode}`)}">${escapeHTML(option.routeLabel)}</span>
             <span class="journey-option-main">${escapeHTML(option.headsign || "Direct service")}</span>
             <span class="journey-option-time">${escapeHTML(formatScheduledClockTime(option.departureTime))} → ${escapeHTML(formatScheduledClockTime(option.arrivalTime))}</span>
-            <span class="journey-option-badge">${escapeHTML(departureBadge)}</span>
+            <span class="journey-option-badge">${escapeHTML(option.totalMinutes ? `${option.totalMinutes}m` : departureBadge)}</span>
+            <span class="journey-option-meta">${escapeHTML(option.totalMinutes ? `${option.startWalkMinutes}m walk • ${option.busMinutes}m bus • ${option.endWalkMinutes}m walk` : "Direct stop-to-stop")}</span>
           </button>
         `;
       }).join("")
-    : `<div class="arrival-empty">No direct route found. Transfers are the next planning layer.</div>`;
+    : `<div class="arrival-empty">No direct route found near those places. Transfers are the next planning layer.</div>`;
 
   selectionPanelContent.innerHTML = `
     <section class="panel-section journey-panel-section journey-options-only-section">
@@ -2213,9 +2443,123 @@ function renderJourneyResultsPanel(options) {
   showSelectionPanel();
 }
 
+function getCurrentBrowserLocation() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error("This browser does not support GPS location."));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 12000,
+      maximumAge: 30000
+    });
+  });
+}
+
+function applyJourneyPlaceAsStart(place) {
+  const nearest = findNearestStopWithDistance(place.lat, place.lon);
+  if (!nearest) throw new Error("No nearby stop found for the start location.");
+
+  journeyStart = {
+    type: "place",
+    label: place.label,
+    lat: place.lat,
+    lon: place.lon,
+    stopId: nearest.stop.id,
+    nearestStopId: nearest.stop.id,
+    nearestStopDistanceMetres: nearest.distanceMetres
+  };
+}
+
+function applyJourneyPlaceAsEnd(place) {
+  const nearest = findNearestStopWithDistance(place.lat, place.lon);
+  if (!nearest) throw new Error("No nearby stop found for the destination.");
+
+  journeyEnd = {
+    type: "place",
+    label: place.label,
+    lat: place.lat,
+    lon: place.lon,
+    stopId: nearest.stop.id,
+    nearestStopId: nearest.stop.id,
+    nearestStopDistanceMetres: nearest.distanceMetres
+  };
+}
+
+async function resolveJourneyStartFromInput() {
+  const query = String(journeyStartInput?.value || "").trim();
+
+  if (query) {
+    const place = await geocodeJourneyPlace(query);
+    if (!place) throw new Error("Start location was not found.");
+    applyJourneyPlaceAsStart(place);
+    return;
+  }
+
+  if (userLocation?.nearestStopId) {
+    journeyStart = {
+      type: "gps",
+      label: "Your location",
+      lat: userLocation.lat,
+      lon: userLocation.lon,
+      stopId: userLocation.nearestStopId,
+      nearestStopId: userLocation.nearestStopId
+    };
+    return;
+  }
+
+  showJourneySearchStatus("Finding your location…", "Allow location access when your browser asks.");
+  const position = await getCurrentBrowserLocation();
+  const lat = position.coords.latitude;
+  const lon = position.coords.longitude;
+  const nearest = findNearestStopWithDistance(lat, lon);
+  if (!nearest) throw new Error("No nearby stop found for your location.");
+
+  userLocation = { lat, lon, nearestStopId: nearest.stop.id };
+  updateUserLocationMarker(lat, lon);
+  journeyStart = {
+    type: "gps",
+    label: "Your location",
+    lat,
+    lon,
+    stopId: nearest.stop.id,
+    nearestStopId: nearest.stop.id
+  };
+}
+
+async function resolveJourneyEndFromInput() {
+  const query = String(journeyEndInput?.value || "").trim();
+  if (!query && journeyEnd) return;
+  if (!query) throw new Error("Enter a destination first.");
+
+  const place = await geocodeJourneyPlace(query);
+  if (!place) throw new Error("Destination was not found.");
+  applyJourneyPlaceAsEnd(place);
+}
+
+async function handleJourneySearchSubmit() {
+  try {
+    expandJourneyOverlay();
+    journeyPickMode = null;
+    showJourneySearchStatus("Finding route…", "Searching places, matching nearby stops, then checking the timetable.");
+
+    await resolveJourneyStartFromInput();
+    await resolveJourneyEndFromInput();
+
+    renderJourneyOverlay();
+    showJourneyOptions();
+  } catch (error) {
+    console.warn("Journey search failed", error);
+    renderJourneyOverlay();
+    showJourneySearchStatus("Could not plan that yet", error?.message || "Try a more specific Perth location.");
+  }
+}
+
 function showJourneyOptions() {
   const originStopId = getJourneyStartStopId();
-  const destinationStopId = journeyEnd?.stopId || null;
+  const destinationStopId = getJourneyEndStopId() || null;
 
   if (!originStopId || !destinationStopId) {
     renderJourneyPrompt("Complete your plan", "Set both a start and destination to see options.", originStopId ? "end" : "start");
@@ -2227,7 +2571,7 @@ function showJourneyOptions() {
     return;
   }
 
-  const options = findDirectJourneyOptions(originStopId, destinationStopId);
+  const options = findFastestJourneyOptions();
   latestJourneyOptions = options;
   selectedJourneyOptionTripId = null;
   highlightedTripIds = new Set(options.map(option => option.tripId));
@@ -3493,6 +3837,28 @@ if (journeySwapButton) {
     swapJourneyDirection();
   });
 }
+
+if (journeySearchButton) {
+  journeySearchButton.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    handleJourneySearchSubmit();
+  });
+}
+
+[journeyStartInput, journeyEndInput].forEach(input => {
+  if (!input) return;
+
+  input.addEventListener("focus", () => {
+    expandJourneyOverlay();
+  });
+
+  input.addEventListener("keydown", event => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    handleJourneySearchSubmit();
+  });
+});
 
 if (stopMapAction) {
   stopMapAction.addEventListener("click", event => {
