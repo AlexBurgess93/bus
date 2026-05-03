@@ -1807,15 +1807,24 @@ function getJourneyDelayColour(option) {
 }
 
 function getJourneyOptionLiveLatLng(option) {
-  const livePosition = latestLiveTripPositionsByTripId[option.tripId] || latestTripPositionsByTripId[option.tripId];
-  if (!livePosition) return null;
+  const scheduledPosition = latestTripPositionsByTripId[option.tripId];
+  const livePosition = latestLiveTripPositionsByTripId[option.tripId];
 
-  const busPoint = livePosition.position || livePosition.latLng || livePosition.coords || null;
+  // Match the journey preview to the active viewing mode. In Scheduled mode the
+  // bus icon moves by timetable, so the approach/ant path must shrink from that
+  // same timetable position. In Live/Compare we prefer the live-adjusted point.
+  const positionRecord = trackingMode === "scheduled"
+    ? scheduledPosition
+    : livePosition || scheduledPosition;
+
+  if (!positionRecord) return null;
+
+  const busPoint = positionRecord.position || positionRecord.latLng || positionRecord.coords || null;
 
   if (Array.isArray(busPoint)) return busPoint;
 
-  if (livePosition.lat && livePosition.lon) return [livePosition.lat, livePosition.lon];
-  if (livePosition.latitude && livePosition.longitude) return [livePosition.latitude, livePosition.longitude];
+  if (positionRecord.lat && positionRecord.lon) return [positionRecord.lat, positionRecord.lon];
+  if (positionRecord.latitude && positionRecord.longitude) return [positionRecord.latitude, positionRecord.longitude];
 
   return null;
 }
@@ -1995,7 +2004,6 @@ function drawSelectedJourneyOption(option) {
   const busLatLng = getJourneyOptionLiveLatLng(option);
 
   if (busLatLng) {
-    drawJourneyVehicleLabel(option, busLatLng);
     const approachSegment = getShapeSegmentToStop(shapeCoords, busLatLng, startStop);
 
     if (approachSegment.length >= 2) {
@@ -2024,7 +2032,38 @@ function drawJourneyOptionPaths(options) {
   drawAllJourneyOptionPreviews(options);
 }
 
+function getSelectedJourneyOption() {
+  if (!selectedJourneyOptionTripId) return null;
+  return latestJourneyOptions.find(item => item.tripId === selectedJourneyOptionTripId) || null;
+}
+
+function redrawSelectedJourneyOption() {
+  const option = getSelectedJourneyOption();
+  if (!option) return;
+
+  drawSelectedJourneyOption(option);
+  highlightJourneyMarkers();
+}
+
+function unselectJourneyOption() {
+  selectedJourneyOptionTripId = null;
+  highlightedTripIds = new Set(latestJourneyOptions.map(option => option.tripId));
+  selectedTripId = null;
+  selectedStopId = null;
+
+  drawAllJourneyOptionPreviews(latestJourneyOptions);
+  updateBusPositionsLive();
+  highlightJourneyMarkers();
+  renderJourneyResultsPanel(latestJourneyOptions);
+  fitJourneyBounds(latestJourneyOptions);
+}
+
 function selectJourneyOption(tripId) {
+  if (selectedJourneyOptionTripId === tripId) {
+    unselectJourneyOption();
+    return;
+  }
+
   const option = latestJourneyOptions.find(item => item.tripId === tripId);
   if (!option) return;
 
@@ -2034,8 +2073,7 @@ function selectJourneyOption(tripId) {
   selectedStopId = null;
 
   updateBusPositionsLive();
-  drawSelectedJourneyOption(option);
-  highlightJourneyMarkers();
+  redrawSelectedJourneyOption();
   renderJourneyResultsPanel(latestJourneyOptions);
   fitSelectedJourneyOptionBounds(option);
 }
@@ -3229,6 +3267,13 @@ function updateBusPositionsLive() {
 
   updateNetworkLayer();
   applyBetaMarkerVisibility();
+
+  // Keep the selected journey preview physically tied to the moving bus marker.
+  // As the scheduled/live marker advances, the ant-style approach segment is
+  // redrawn from the new bus location, so it naturally shrinks toward the start.
+  if (selectedJourneyOptionTripId) {
+    redrawSelectedJourneyOption();
+  }
 
   if (activeTripIds.size > 0) {
     hasWarnedAboutNoActiveTrips = false;
