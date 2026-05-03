@@ -1725,6 +1725,11 @@ function fitJourneyBounds(options = []) {
   if (startStop) bounds.push([startStop.lat, startStop.lon]);
   if (endStop) bounds.push([endStop.lat, endStop.lon]);
 
+  const journeyStartPoint = getJourneyEndpointLatLng(journeyStart, startStop);
+  const journeyEndPoint = getJourneyEndpointLatLng(journeyEnd, endStop);
+  if (journeyStartPoint) bounds.push(journeyStartPoint);
+  if (journeyEndPoint) bounds.push(journeyEndPoint);
+
   options.slice(0, 5).forEach(option => {
     const shapeCoords = allShapes[option.shapeId];
     const optionStartStop = stopLookup[option.originStopId || getJourneyStartStopId()];
@@ -2150,6 +2155,79 @@ function drawJourneyStopTimeLabels(option) {
 }
 
 
+function getJourneyEndpointLatLng(endpoint, fallbackStop) {
+  if (Number.isFinite(endpoint?.lat) && Number.isFinite(endpoint?.lon)) {
+    return [endpoint.lat, endpoint.lon];
+  }
+
+  if (fallbackStop) return [fallbackStop.lat, fallbackStop.lon];
+  return null;
+}
+
+function getLatLngDistanceMetres(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return 0;
+  return distanceMetresBetweenLatLon(a[0], a[1], b[0], b[1]);
+}
+
+function getLatLngMidpoint(a, b) {
+  return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+}
+
+function drawJourneyWalkTimeChip(latLng, minutes, extraClass = "") {
+  if (!latLng || !Number.isFinite(minutes) || minutes <= 0) return;
+
+  const marker = L.marker(latLng, {
+    interactive: false,
+    zIndexOffset: 1550,
+    icon: L.divIcon({
+      className: `journey-walk-time-marker ${extraClass}`.trim(),
+      html: `<span>${Math.max(1, Math.round(minutes))}m</span>`,
+      iconSize: [44, 22],
+      iconAnchor: [22, 11]
+    })
+  }).addTo(map);
+
+  journeyStopTimeMarkers.push(marker);
+}
+
+function drawJourneyWalkingLeg(fromLatLng, toLatLng, minutes, extraClass = "") {
+  if (!Array.isArray(fromLatLng) || !Array.isArray(toLatLng)) return;
+
+  const metres = getLatLngDistanceMetres(fromLatLng, toLatLng);
+  if (!Number.isFinite(metres) || metres < 15) return;
+
+  const line = L.polyline([fromLatLng, toLatLng], {
+    renderer: routeFlowRenderer,
+    color: "#111827",
+    weight: 4,
+    opacity: 0.9,
+    dashArray: "2 10",
+    lineCap: "round",
+    lineJoin: "round",
+    className: `journey-walking-ant-line ${extraClass}`.trim()
+  }).addTo(map);
+
+  line.bringToBack();
+  journeyRouteLines.push(line);
+
+  drawJourneyWalkTimeChip(getLatLngMidpoint(fromLatLng, toLatLng), minutes || estimateWalkingMinutes(metres), extraClass);
+}
+
+function drawJourneyWalkingLegs(option) {
+  const startStop = stopLookup[option?.originStopId || getJourneyStartStopId()];
+  const endStop = stopLookup[option?.destinationStopId || getJourneyEndStopId()];
+  if (!startStop || !endStop) return;
+
+  const startPoint = getJourneyEndpointLatLng(journeyStart, startStop);
+  const endPoint = getJourneyEndpointLatLng(journeyEnd, endStop);
+  const startStopPoint = [startStop.lat, startStop.lon];
+  const endStopPoint = [endStop.lat, endStop.lon];
+
+  drawJourneyWalkingLeg(startPoint, startStopPoint, option?.startWalkMinutes, "journey-start-walk-line");
+  drawJourneyWalkingLeg(endStopPoint, endPoint, option?.endWalkMinutes, "journey-end-walk-line");
+}
+
+
 function drawJourneyVehicleLabel(option, latLng) {
   if (!option || !latLng) return;
 
@@ -2214,6 +2292,8 @@ function drawJourneyOptionPreview(option) {
       journeyRouteLines.push(approachLine);
     }
   }
+
+  drawJourneyWalkingLegs(option);
 }
 
 function drawAllJourneyOptionPreviews(options) {
@@ -2235,6 +2315,11 @@ function fitSelectedJourneyOptionBounds(option) {
   if (busLatLng) bounds.push(busLatLng);
   if (startStop) bounds.push([startStop.lat, startStop.lon]);
   if (endStop) bounds.push([endStop.lat, endStop.lon]);
+
+  const journeyStartPoint = getJourneyEndpointLatLng(journeyStart, startStop);
+  const journeyEndPoint = getJourneyEndpointLatLng(journeyEnd, endStop);
+  if (journeyStartPoint) bounds.push(journeyStartPoint);
+  if (journeyEndPoint) bounds.push(journeyEndPoint);
 
   if (shapeCoords && startStop && endStop) {
     getShapeSegmentBetweenStops(shapeCoords, startStop, endStop).forEach(coord => bounds.push(coord));
@@ -2305,6 +2390,7 @@ function drawSelectedJourneyOption(option) {
     }
   }
 
+  drawJourneyWalkingLegs(option);
   drawJourneyStopTimeLabels(option);
 }
 
