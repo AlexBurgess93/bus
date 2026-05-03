@@ -60,6 +60,10 @@ let latestLiveTripPositionsByTripId = {};
 let ghostRouteSegmentLine = null;
 let selectedBusVariant = "live";
 let transportModeFilter = "all";
+const PIN_STORAGE_KEY = "transitPinnedNetworkV1";
+let pinnedRouteIds = new Set();
+let pinnedStopIds = new Set();
+let pinnedViewEnabled = false;
 
 const betaModeButtons = document.querySelectorAll(".beta-mode-button");
 
@@ -93,6 +97,175 @@ function hideSelectionPanel() {
   renderDefaultContextPanel();
 }
 
+function getTripRouteKey(trip = {}) {
+  const routeId = String(trip.routeId ?? "").trim();
+  if (routeId) return routeId;
+
+  const mode = getTransportMode(trip);
+  const shortName = String(trip.routeShortName ?? "").trim();
+  const longName = String(trip.routeLongName ?? "").trim();
+
+  return `${mode}:${shortName}:${longName}`;
+}
+
+function getRouteDisplayNameForTrip(trip = {}) {
+  const label = getTransportLabel(trip);
+  const mode = getTransportMode(trip);
+
+  if (mode === "train" || mode === "ferry") {
+    return String(trip.routeLongName || trip.headsign || label || mode).trim();
+  }
+
+  return String(label || trip.routeShortName || trip.routeLongName || "Route").trim();
+}
+
+function readPinState() {
+  try {
+    const raw = localStorage.getItem(PIN_STORAGE_KEY);
+    if (!raw) return;
+
+    const parsed = JSON.parse(raw);
+    pinnedRouteIds = new Set(Array.isArray(parsed.pinnedRouteIds) ? parsed.pinnedRouteIds : []);
+    pinnedStopIds = new Set(Array.isArray(parsed.pinnedStopIds) ? parsed.pinnedStopIds : []);
+    pinnedViewEnabled = Boolean(parsed.pinnedViewEnabled);
+  } catch (error) {
+    console.warn("Pinned network state could not be read.", error);
+    pinnedRouteIds = new Set();
+    pinnedStopIds = new Set();
+    pinnedViewEnabled = false;
+  }
+}
+
+function savePinState() {
+  localStorage.setItem(PIN_STORAGE_KEY, JSON.stringify({
+    pinnedRouteIds: Array.from(pinnedRouteIds),
+    pinnedStopIds: Array.from(pinnedStopIds),
+    pinnedViewEnabled
+  }));
+}
+
+function getPinnedRouteIdsFromStops() {
+  const routeIds = new Set();
+
+  pinnedStopIds.forEach(stopId => {
+    const upcoming = stopUpcoming[stopId] || [];
+
+    upcoming.forEach(item => {
+      const trip = timetableTrips.find(candidate => candidate.tripId === item.tripId);
+      if (trip) {
+        routeIds.add(getTripRouteKey(trip));
+      }
+    });
+  });
+
+  return routeIds;
+}
+
+function getEffectivePinnedRouteIds() {
+  const routeIds = new Set(pinnedRouteIds);
+  getPinnedRouteIdsFromStops().forEach(routeId => routeIds.add(routeId));
+  return routeIds;
+}
+
+function hasAnyPins() {
+  return pinnedRouteIds.size > 0 || pinnedStopIds.size > 0;
+}
+
+function tripMatchesPinnedView(trip = {}) {
+  if (!pinnedViewEnabled) return true;
+  if (!hasAnyPins()) return false;
+
+  return getEffectivePinnedRouteIds().has(getTripRouteKey(trip));
+}
+
+function tripMatchesMapFilters(trip = {}) {
+  return tripMatchesTransportFilter(trip) && tripMatchesPinnedView(trip);
+}
+
+function getPinnedRouteLabels() {
+  const labelsByKey = {};
+
+  timetableTrips.forEach(trip => {
+    const key = getTripRouteKey(trip);
+    if (!getEffectivePinnedRouteIds().has(key)) return;
+    labelsByKey[key] = getRouteDisplayNameForTrip(trip);
+  });
+
+  return Object.values(labelsByKey).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+}
+
+function setPinnedViewEnabled(enabled) {
+  pinnedViewEnabled = Boolean(enabled);
+  savePinState();
+  clearBusFocus();
+  renderDefaultContextPanel();
+  updateBusPositionsLive();
+  updateNetworkLayer();
+}
+
+function togglePinnedRoute(trip) {
+  const routeKey = getTripRouteKey(trip);
+
+  if (pinnedRouteIds.has(routeKey)) {
+    pinnedRouteIds.delete(routeKey);
+  } else {
+    pinnedRouteIds.add(routeKey);
+  }
+
+  savePinState();
+  renderBusPanel(trip, selectedBusVariant);
+  updateBusPositionsLive();
+  updateNetworkLayer();
+}
+
+function togglePinnedStop(stopId) {
+  if (pinnedStopIds.has(stopId)) {
+    pinnedStopIds.delete(stopId);
+  } else {
+    pinnedStopIds.add(stopId);
+  }
+
+  savePinState();
+  const stop = stopLookup[stopId];
+  if (stop) {
+    renderStopPanel(stop, getUpcomingForStop(stopId, 30));
+  }
+  updateBusPositionsLive();
+  updateNetworkLayer();
+}
+
+function resetPins() {
+  pinnedRouteIds = new Set();
+  pinnedStopIds = new Set();
+  pinnedViewEnabled = false;
+  savePinState();
+  clearBusFocus();
+  renderDefaultContextPanel();
+  updateBusPositionsLive();
+  updateNetworkLayer();
+}
+
+function getRoutesForStop(stopId) {
+  const routeMap = new Map();
+  const upcoming = stopUpcoming[stopId] || [];
+
+  upcoming.forEach(item => {
+    const trip = timetableTrips.find(candidate => candidate.tripId === item.tripId);
+    if (!trip) return;
+
+    const key = getTripRouteKey(trip);
+    if (!routeMap.has(key)) {
+      routeMap.set(key, {
+        key,
+        label: getRouteDisplayNameForTrip(trip),
+        mode: getTransportMode(trip)
+      });
+    }
+  });
+
+  return Array.from(routeMap.values()).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+}
+
 function renderDefaultContextPanel() {
   const filters = [
     { value: "all", label: "All" },
@@ -112,22 +285,69 @@ function renderDefaultContextPanel() {
     </button>
   `).join("");
 
+  const pinnedRouteLabels = getPinnedRouteLabels();
+  const pinsSummary = hasAnyPins()
+    ? `${pinnedRouteLabels.length} route${pinnedRouteLabels.length === 1 ? "" : "s"} · ${pinnedStopIds.size} stop${pinnedStopIds.size === 1 ? "" : "s"}`
+    : "Pin a route or stop to build your network.";
+
+  const pinnedPreview = pinnedRouteLabels.length
+    ? `<div class="pinned-preview">${pinnedRouteLabels.slice(0, 8).map(label => `<span>${escapeHTML(label)}</span>`).join("")}</div>`
+    : "";
+
   selectionPanelContent.innerHTML = `
     <section class="panel-section context-panel-section">
       <div class="context-panel-header">
         <div class="panel-text-stack">
           <div class="panel-title">Explore services</div>
-          <div class="panel-subtitle">Filter the map, or tap a stop or service.</div>
+          <div class="panel-subtitle">Filter transport type, or switch to your pinned network.</div>
         </div>
       </div>
 
-      <div class="transport-filter-strip" role="group" aria-label="Filter transport mode">
-        ${filterHTML}
+      <div class="context-control-row">
+        <div class="transport-filter-strip" role="group" aria-label="Filter transport mode">
+          ${filterHTML}
+        </div>
+
+        <button
+          class="pinned-view-button ${pinnedViewEnabled ? "is-active" : ""}"
+          type="button"
+          data-pinned-view-toggle="true"
+          aria-pressed="${pinnedViewEnabled ? "true" : "false"}"
+        >
+          📌 Pinned
+        </button>
       </div>
+
+      <div class="pinned-status-row">
+        <span>${escapeHTML(pinnedViewEnabled ? `Pinned view active · ${pinsSummary}` : pinsSummary)}</span>
+        ${hasAnyPins() ? `<button class="pinned-reset-button" type="button" data-reset-pins="true">Reset pins</button>` : ""}
+      </div>
+      ${pinnedPreview}
     </section>
   `;
 
   bindTransportFilterButtons();
+  bindPinContextButtons();
+}
+
+function bindPinContextButtons() {
+  const toggle = selectionPanelContent.querySelector("[data-pinned-view-toggle]");
+  if (toggle) {
+    toggle.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      setPinnedViewEnabled(!pinnedViewEnabled);
+    });
+  }
+
+  const reset = selectionPanelContent.querySelector("[data-reset-pins]");
+  if (reset) {
+    reset.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      resetPins();
+    });
+  }
 }
 
 function bindTransportFilterButtons() {
@@ -179,7 +399,7 @@ function positionIsInsideExpandedViewport(position) {
 
 function shouldRenderTripMarkers(trip, scheduledPosition, livePosition) {
   if (selectedTripId === trip.tripId) return true;
-  if (!tripMatchesTransportFilter(trip)) return false;
+  if (!tripMatchesMapFilters(trip)) return false;
 
   const zoom = map.getZoom();
 
@@ -251,11 +471,24 @@ function renderStopPanel(stop, upcomingItems) {
 
   selectionPanelContent.innerHTML = `
     <section class="panel-section stop-panel-section">
-      <div class="panel-main-row">
+      <div class="panel-main-row panel-main-row-with-action">
         <div class="panel-text-stack">
           <div class="panel-title">${escapeHTML(stop.name)}</div>
           <div class="panel-subtitle">Stop ID: ${escapeHTML(stop.id)}</div>
         </div>
+
+        <button
+          class="pin-action-button ${pinnedStopIds.has(stop.id) ? "is-pinned" : ""}"
+          type="button"
+          data-pin-stop-id="${escapeHTML(stop.id)}"
+          aria-pressed="${pinnedStopIds.has(stop.id) ? "true" : "false"}"
+        >
+          ${pinnedStopIds.has(stop.id) ? "Pinned" : "Pin stop"}
+        </button>
+      </div>
+
+      <div class="stop-route-strip" aria-label="Routes serving this stop">
+        ${getRoutesForStop(stop.id).slice(0, 18).map(route => `<span class="stop-route-pill stop-route-${escapeHTML(route.mode)}">${escapeHTML(route.label)}</span>`).join("") || `<span class="stop-route-empty">No active routes found for this stop today.</span>`}
       </div>
 
       <div class="arrival-strip" aria-label="Upcoming buses">
@@ -283,6 +516,15 @@ function renderStopPanel(stop, upcomingItems) {
 
     button.addEventListener("click", selectUpcomingTrip);
   });
+
+  const pinStopButton = selectionPanelContent.querySelector("[data-pin-stop-id]");
+  if (pinStopButton) {
+    pinStopButton.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      togglePinnedStop(pinStopButton.dataset.pinStopId);
+    });
+  }
 
   showSelectionPanel();
 }
@@ -454,6 +696,15 @@ function renderBusPanel(trip, variant = selectedBusVariant) {
           <span class="delay-value">${escapeHTML(delayStatus.text)}</span>
           <span class="delay-detail">${escapeHTML(delayStatus.detail)}</span>
         </div>
+
+        <button
+          class="pin-action-button ${pinnedRouteIds.has(getTripRouteKey(trip)) ? "is-pinned" : ""}"
+          type="button"
+          data-pin-route-id="${escapeHTML(getTripRouteKey(trip))}"
+          aria-pressed="${pinnedRouteIds.has(getTripRouteKey(trip)) ? "true" : "false"}"
+        >
+          ${pinnedRouteIds.has(getTripRouteKey(trip)) ? "Pinned" : "Pin route"}
+        </button>
       </div>
 
       <div class="between-card">
@@ -462,6 +713,15 @@ function renderBusPanel(trip, variant = selectedBusVariant) {
       </div>
     </section>
   `;
+
+  const pinRouteButton = selectionPanelContent.querySelector("[data-pin-route-id]");
+  if (pinRouteButton) {
+    pinRouteButton.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      togglePinnedRoute(trip);
+    });
+  }
 
   showSelectionPanel();
 }
@@ -550,6 +810,20 @@ function applyDefaultStopMarkerStylesForZoom() {
 
   Object.keys(stopMarkersByStopId).forEach(stopId => {
     const marker = stopMarkersByStopId[stopId];
+
+    if (pinnedStopIds.has(stopId)) {
+      marker.setStyle({
+        radius: map.getZoom() < STOP_DOTS_MIN_ZOOM ? 6 : 7,
+        color: "#7c2d12",
+        weight: 3,
+        fillColor: "#f97316",
+        fillOpacity: 1,
+        opacity: 1
+      });
+      marker.bringToFront();
+      return;
+    }
+
     marker.setStyle(style);
   });
 }
@@ -766,7 +1040,7 @@ function updateNetworkLayer() {
   const tripByShapeId = {};
 
   timetableTrips.forEach(trip => {
-    if (!tripMatchesTransportFilter(trip)) return;
+    if (!tripMatchesMapFilters(trip)) return;
     if (!tripIsActiveAtSeconds(trip, currentSeconds)) return;
 
     const shapeCoords = allShapes[trip.shapeId];
@@ -1872,6 +2146,7 @@ async function init() {
   hideSelectionPanel();
 
   await loadCoreData();
+  renderDefaultContextPanel();
   await loadStops();
 
   map.invalidateSize();
