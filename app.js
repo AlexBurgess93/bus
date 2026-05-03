@@ -216,25 +216,31 @@ function setPinnedViewEnabled(enabled) {
 function togglePinnedRoute(trip) {
   const routeKey = getTripRouteKey(trip);
 
-  if (!pinnedRouteIds.has(routeKey)) {
+  if (pinnedRouteIds.has(routeKey)) {
+    pinnedRouteIds.delete(routeKey);
+  } else {
     pinnedRouteIds.add(routeKey);
   }
 
   savePinState();
-  clearActiveMapPinMarker();
   updateBusPositionsLive();
   updateNetworkLayer();
+
+  return pinnedRouteIds.has(routeKey);
 }
 
 function togglePinnedStop(stopId) {
-  if (!pinnedStopIds.has(stopId)) {
+  if (pinnedStopIds.has(stopId)) {
+    pinnedStopIds.delete(stopId);
+  } else {
     pinnedStopIds.add(stopId);
   }
 
   savePinState();
-  clearActiveMapPinMarker();
   updateBusPositionsLive();
   updateNetworkLayer();
+
+  return pinnedStopIds.has(stopId);
 }
 
 function resetPins() {
@@ -276,40 +282,51 @@ function clearActiveMapPinMarker() {
   }
 }
 
-function createMapPinIcon(label = "Pin") {
+function createMapPinIcon(label = "Pin", isPinned = false) {
+  const stateClass = isPinned ? "is-pinned" : "is-unpinned";
+  const iconSrc = isPinned ? "unpin_icon.svg" : "pin_icon.svg";
+
   return L.divIcon({
     className: "",
     html: `
-      <button class="map-pin-button" type="button" aria-label="${escapeHTML(label)}">
-        📌
+      <button class="map-pin-button ${stateClass}" type="button" aria-label="${escapeHTML(label)}">
+        <img class="map-pin-icon" src="${iconSrc}" alt="" aria-hidden="true">
       </button>
     `,
-    iconSize: [42, 42],
-    iconAnchor: [21, 46]
+    iconSize: [34, 34],
+    // Anchor lower than the icon so the control floats above the selected marker instead of covering it.
+    iconAnchor: [17, 64]
   });
 }
 
 function showMapPinForStop(stop) {
   clearActiveMapPinMarker();
 
-  if (!stop || pinnedStopIds.has(stop.id)) return;
+  if (!stop) return;
+
+  const isPinned = pinnedStopIds.has(stop.id);
+  const label = isPinned
+    ? `Remove pinned stop ${stop.name}`
+    : `Pin stop ${stop.name}`;
 
   activeMapPinMarker = L.marker([stop.lat, stop.lon], {
-    icon: createMapPinIcon(`Pin stop ${stop.name}`),
+    icon: createMapPinIcon(label, isPinned),
     zIndexOffset: 1800,
-    interactive: true
+    interactive: true,
+    keyboard: true
   }).addTo(map);
 
   activeMapPinMarker.on("click", event => {
     stopLeafletEvent(event);
     togglePinnedStop(stop.id);
+    showMapPinForStop(stop);
   });
 }
 
 function showMapPinForTrip(trip, variant = selectedBusVariant) {
   clearActiveMapPinMarker();
 
-  if (!trip || pinnedRouteIds.has(getTripRouteKey(trip))) return;
+  if (!trip) return;
 
   const positionRecord = variant === "scheduled"
     ? latestTripPositionsByTripId[trip.tripId]
@@ -317,15 +334,24 @@ function showMapPinForTrip(trip, variant = selectedBusVariant) {
 
   if (!positionRecord?.position) return;
 
+  const routeKey = getTripRouteKey(trip);
+  const isPinned = pinnedRouteIds.has(routeKey);
+  const routeLabel = getRouteDisplayNameForTrip(trip);
+  const label = isPinned
+    ? `Remove pinned ${routeLabel}`
+    : `Pin ${routeLabel}`;
+
   activeMapPinMarker = L.marker(positionRecord.position, {
-    icon: createMapPinIcon(`Pin ${getRouteDisplayNameForTrip(trip)}`),
+    icon: createMapPinIcon(label, isPinned),
     zIndexOffset: 1800,
-    interactive: true
+    interactive: true,
+    keyboard: true
   }).addTo(map);
 
   activeMapPinMarker.on("click", event => {
     stopLeafletEvent(event);
     togglePinnedRoute(trip);
+    showMapPinForTrip(trip, variant);
   });
 }
 
