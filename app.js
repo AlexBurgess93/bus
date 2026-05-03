@@ -96,6 +96,10 @@ let journeySelectedPlaces = { start: null, end: null };
 let journeyAutocompleteTimers = { start: null, end: null };
 let journeyAutocompleteRequestIds = { start: 0, end: 0 };
 
+let threeDPreviewMap = null;
+let threeDPreviewMarker = null;
+let threeDPreviewMessage = null;
+
 const trackingModeButtons = document.querySelectorAll(".tracking-mode-button");
 
 // Set this to false if you only ever want true real-time behaviour.
@@ -111,6 +115,10 @@ const LIVE_NOTICE_SEEN_KEY = "tripTrackerLiveNoticeSeen";
 const locateUserButton = document.getElementById("locateUserButton");
 const themeToggleButton = document.getElementById("themeToggleButton");
 const themeToggleIcon = document.getElementById("themeToggleIcon");
+const threeDPreviewButton = document.getElementById("threeDPreviewButton");
+const threeDPreviewOverlay = document.getElementById("threeDPreviewOverlay");
+const threeDPreviewMapEl = document.getElementById("threeDPreviewMap");
+const closeThreeDPreviewButton = document.getElementById("closeThreeDPreviewButton");
 const journeyOverlay = document.getElementById("journeyOverlay");
 const journeyStartValue = document.getElementById("journeyStartValue");
 const journeyEndValue = document.getElementById("journeyEndValue");
@@ -167,6 +175,168 @@ function updateThemeToggleButton() {
 
 function toggleMapTheme() {
   applyMapTheme(currentMapTheme === "dark" ? "light" : "dark");
+}
+
+
+// ---------- Optional 3D preview easter egg ----------
+function getLatLngObject(value) {
+  if (!value) return null;
+
+  if (Array.isArray(value) && value.length >= 2) {
+    const lat = Number(value[0]);
+    const lng = Number(value[1]);
+    return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+  }
+
+  const lat = Number(value.lat ?? value.latitude);
+  const lng = Number(value.lng ?? value.lon ?? value.longitude);
+  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+}
+
+function getLayerBoundsCenter(layer) {
+  try {
+    const bounds = layer?.getBounds?.();
+    if (bounds?.isValid?.()) {
+      const center = bounds.getCenter();
+      return { lat: center.lat, lng: center.lng };
+    }
+  } catch (error) {
+    console.warn("Unable to read layer bounds for 3D preview", error);
+  }
+  return null;
+}
+
+function get3DPreviewCenter() {
+  if (selectedTripId) {
+    const marker = selectedBusVariant === "live"
+      ? liveBusMarkersByTripId[selectedTripId] || busMarkersByTripId[selectedTripId]
+      : busMarkersByTripId[selectedTripId] || liveBusMarkersByTripId[selectedTripId];
+
+    const markerCenter = getLatLngObject(marker?.getLatLng?.());
+    if (markerCenter) return markerCenter;
+
+    const liveRecord = latestLiveTripPositionsByTripId[selectedTripId];
+    const scheduledRecord = latestTripPositionsByTripId[selectedTripId];
+    const record = selectedBusVariant === "live" ? liveRecord || scheduledRecord : scheduledRecord || liveRecord;
+    const recordCenter = getLatLngObject(record?.position || record?.latLng || record?.coords || record);
+    if (recordCenter) return recordCenter;
+  }
+
+  const selectedJourneyOption = getSelectedJourneyOption?.();
+  if (selectedJourneyOption) {
+    const busLatLng = getJourneyOptionLiveLatLng(selectedJourneyOption);
+    const journeyBusCenter = getLatLngObject(busLatLng);
+    if (journeyBusCenter) return journeyBusCenter;
+  }
+
+  if (journeyRouteLines.length) {
+    const selectedLine = journeyRouteLines.find(line => line?.options?.className?.includes("journey-selected")) || journeyRouteLines[0];
+    const journeyLineCenter = getLayerBoundsCenter(selectedLine);
+    if (journeyLineCenter) return journeyLineCenter;
+  }
+
+  const routeLineCenter = getLayerBoundsCenter(currentRouteLine) || getLayerBoundsCenter(ghostRouteSegmentLine);
+  if (routeLineCenter) return routeLineCenter;
+
+  const userCenter = getLatLngObject(userLocation);
+  if (userCenter) return userCenter;
+
+  const mapCenter = map.getCenter();
+  return { lat: mapCenter.lat, lng: mapCenter.lng };
+}
+
+function show3DPreviewMessage(message) {
+  if (!threeDPreviewOverlay) return;
+
+  if (!threeDPreviewMessage) {
+    threeDPreviewMessage = document.createElement("div");
+    threeDPreviewMessage.className = "three-d-preview-message";
+    threeDPreviewOverlay.appendChild(threeDPreviewMessage);
+  }
+
+  threeDPreviewMessage.textContent = message;
+  threeDPreviewMessage.hidden = false;
+}
+
+function hide3DPreviewMessage() {
+  if (threeDPreviewMessage) threeDPreviewMessage.hidden = true;
+}
+
+function update3DPreviewMarker(center) {
+  if (!threeDPreviewMap || !window.maplibregl || !center) return;
+
+  if (!threeDPreviewMarker) {
+    const markerEl = document.createElement("div");
+    markerEl.className = "three-d-preview-marker";
+    markerEl.style.width = "18px";
+    markerEl.style.height = "18px";
+    markerEl.style.borderRadius = "999px";
+    markerEl.style.background = "#f97316";
+    markerEl.style.border = "3px solid #ffffff";
+    markerEl.style.boxShadow = "0 8px 18px rgba(0,0,0,0.35)";
+    threeDPreviewMarker = new maplibregl.Marker({ element: markerEl, anchor: "center" })
+      .setLngLat([center.lng, center.lat])
+      .addTo(threeDPreviewMap);
+    return;
+  }
+
+  threeDPreviewMarker.setLngLat([center.lng, center.lat]);
+}
+
+function open3DPreview() {
+  if (!threeDPreviewOverlay || !threeDPreviewMapEl) return;
+
+  if (!window.maplibregl) {
+    threeDPreviewOverlay.classList.remove("is-hidden");
+    threeDPreviewOverlay.setAttribute("aria-hidden", "false");
+    show3DPreviewMessage("3D preview could not load. Check your connection and try again.");
+    return;
+  }
+
+  const center = get3DPreviewCenter();
+  threeDPreviewOverlay.classList.remove("is-hidden");
+  threeDPreviewOverlay.setAttribute("aria-hidden", "false");
+  hide3DPreviewMessage();
+
+  if (!threeDPreviewMap) {
+    threeDPreviewMap = new maplibregl.Map({
+      container: threeDPreviewMapEl,
+      style: "https://demotiles.maplibre.org/style.json",
+      center: [center.lng, center.lat],
+      zoom: Math.max(15.5, map.getZoom?.() || 15.5),
+      pitch: 62,
+      bearing: -25,
+      attributionControl: false
+    });
+
+    threeDPreviewMap.addControl(new maplibregl.NavigationControl({ showCompass: true }), "bottom-right");
+
+    threeDPreviewMap.on("load", () => {
+      update3DPreviewMarker(center);
+      threeDPreviewMap.resize();
+    });
+
+    threeDPreviewMap.on("error", event => {
+      console.warn("3D preview map error", event?.error || event);
+      show3DPreviewMessage("3D preview map tiles could not load right now.");
+    });
+  } else {
+    threeDPreviewMap.resize();
+    threeDPreviewMap.easeTo({
+      center: [center.lng, center.lat],
+      zoom: Math.max(15.5, map.getZoom?.() || 15.5),
+      pitch: 62,
+      bearing: -25,
+      duration: 900
+    });
+    update3DPreviewMarker(center);
+  }
+}
+
+function close3DPreview() {
+  if (!threeDPreviewOverlay) return;
+  threeDPreviewOverlay.classList.add("is-hidden");
+  threeDPreviewOverlay.setAttribute("aria-hidden", "true");
 }
 
 
@@ -4253,6 +4423,39 @@ if (themeToggleButton) {
     event.stopPropagation();
   }, { passive: true });
 }
+
+
+if (threeDPreviewButton) {
+  threeDPreviewButton.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    open3DPreview();
+  });
+
+  threeDPreviewButton.addEventListener("touchstart", event => {
+    event.stopPropagation();
+  }, { passive: true });
+}
+
+if (closeThreeDPreviewButton) {
+  closeThreeDPreviewButton.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    close3DPreview();
+  });
+}
+
+if (threeDPreviewOverlay) {
+  threeDPreviewOverlay.addEventListener("click", event => {
+    if (event.target === threeDPreviewOverlay) close3DPreview();
+  });
+}
+
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape" && threeDPreviewOverlay && !threeDPreviewOverlay.classList.contains("is-hidden")) {
+    close3DPreview();
+  }
+});
 
 if (journeyOverlay) {
   journeyOverlay.addEventListener("pointerdown", event => {
