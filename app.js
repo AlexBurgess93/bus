@@ -55,6 +55,7 @@ let activeServiceIdsForToday = new Set();
 let stopLookup = {};
 let busMarkersByTripId = {};
 let stopMarkersByStopId = {};
+let stopHitMarkersByStopId = {};
 let stopRouteLines = [];
 let networkRouteLinesByShapeId = {};
 let latestTripPositionsByTripId = {};
@@ -913,6 +914,73 @@ function getDefaultStopStyleForZoom(zoom = map.getZoom()) {
   };
 }
 
+function getStopHitAreaStyleForZoom(zoom = map.getZoom()) {
+  // Invisible tap target. Keep it larger than the visual stop dot on mobile,
+  // but hidden while stop dots are hidden so zoomed-out maps do not catch
+  // accidental stop taps.
+  if (zoom < STOP_DOTS_MIN_ZOOM) {
+    return {
+      radius: 0,
+      color: "transparent",
+      weight: 0,
+      fillColor: "transparent",
+      fillOpacity: 0,
+      opacity: 0
+    };
+  }
+
+  if (zoom >= 17) {
+    return {
+      radius: 12,
+      color: "transparent",
+      weight: 0,
+      fillColor: "transparent",
+      fillOpacity: 0,
+      opacity: 0
+    };
+  }
+
+  if (zoom >= 16) {
+    return {
+      radius: 15,
+      color: "transparent",
+      weight: 0,
+      fillColor: "transparent",
+      fillOpacity: 0,
+      opacity: 0
+    };
+  }
+
+  return {
+    radius: 18,
+    color: "transparent",
+    weight: 0,
+    fillColor: "transparent",
+    fillOpacity: 0,
+    opacity: 0
+  };
+}
+
+function applyStopHitAreaStylesForZoom() {
+  const style = getStopHitAreaStyleForZoom();
+
+  Object.keys(stopHitMarkersByStopId).forEach(stopId => {
+    stopHitMarkersByStopId[stopId].setStyle(style);
+  });
+}
+
+function selectStop(stop) {
+  clearBusFocus();
+  clearNetworkLayer();
+
+  const upcoming = getUpcomingForStop(stop.id, 30);
+
+  focusTripsForStop(stop.id, upcoming);
+  drawStopUpcomingPaths(upcoming);
+  highlightRelevantStopMarkers(stop.id, upcoming);
+  renderStopPanel(stop, upcoming);
+}
+
 function applyDefaultStopMarkerStylesForZoom() {
   const style = getDefaultStopStyleForZoom();
 
@@ -938,6 +1006,7 @@ function applyDefaultStopMarkerStylesForZoom() {
 
 function resetStopMarkerStyles() {
   applyDefaultStopMarkerStylesForZoom();
+  applyStopHitAreaStylesForZoom();
 }
 
 function highlightRelevantStopMarkers(selectedStopId, upcomingItems) {
@@ -2048,28 +2117,35 @@ async function loadStops() {
   console.log("Stops loaded:", stops.length);
 
   stops.forEach(stop => {
+    // Visible stop dot stays small and clean.
     const marker = L.circleMarker(
       [stop.lat, stop.lon],
-      getDefaultStopStyleForZoom()
+      {
+        ...getDefaultStopStyleForZoom(),
+        interactive: false
+      }
+    ).addTo(map);
+
+    // Invisible hit area gives mobile users a much larger tap target without
+    // visually enlarging every stop dot.
+    const hitMarker = L.circleMarker(
+      [stop.lat, stop.lon],
+      {
+        ...getStopHitAreaStyleForZoom(),
+        interactive: true
+      }
     ).addTo(map);
 
     stopMarkersByStopId[stop.id] = marker;
+    stopHitMarkersByStopId[stop.id] = hitMarker;
 
-    marker.on("click", event => {
+    hitMarker.on("click", event => {
       stopLeafletEvent(event);
-
-      clearBusFocus();
-      clearNetworkLayer();
-
-      const upcoming = getUpcomingForStop(stop.id, 30);
-
-      focusTripsForStop(stop.id, upcoming);
-      drawStopUpcomingPaths(upcoming);
-      highlightRelevantStopMarkers(stop.id, upcoming);
-      renderStopPanel(stop, upcoming);
+      selectStop(stop);
     });
   });
 }
+
 
 function getTripPositionNow(trip, currentSeconds) {
   if (!tripIsActiveAtSeconds(trip, currentSeconds)) {
@@ -2247,6 +2323,7 @@ function refreshMapAfterInteraction() {
     }
 
     applyDefaultStopMarkerStylesForZoom();
+    applyStopHitAreaStylesForZoom();
     updateBusPositionsLive();
   }, MAP_SETTLE_REFRESH_DELAY_MS);
 }
@@ -2350,6 +2427,7 @@ async function init() {
   await loadCoreData();
   renderDefaultContextPanel();
   await loadStops();
+  applyStopHitAreaStylesForZoom();
 
   map.invalidateSize();
   updateBusPositionsLive();
