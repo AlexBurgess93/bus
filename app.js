@@ -407,19 +407,29 @@ function renderDefaultContextPanel() {
     { value: "bus", label: "Bus" },
     { value: "train", label: "Train" },
     { value: "ferry", label: "Ferry" },
-    { value: "pinned", label: "📌 Pinned" }
+    {
+      value: "pinned",
+      label: "Pinned",
+      iconHTML: `<img src="current_location_pin.svg" alt="" class="transport-filter-icon" aria-hidden="true">`
+    }
   ];
 
-  const filterHTML = filters.map(filter => `
-    <button
-      class="transport-filter-button ${filter.value === transportModeFilter ? "is-active" : ""}"
-      type="button"
-      data-transport-filter="${escapeHTML(filter.value)}"
-      aria-pressed="${filter.value === transportModeFilter ? "true" : "false"}"
-    >
-      ${escapeHTML(filter.label)}
-    </button>
-  `).join("");
+  const filterHTML = filters.map(filter => {
+    const contentHTML = filter.iconHTML
+      ? `${filter.iconHTML}<span>${escapeHTML(filter.label)}</span>`
+      : `<span>${escapeHTML(filter.label)}</span>`;
+
+    return `
+      <button
+        class="transport-filter-button ${filter.value === transportModeFilter ? "is-active" : ""}"
+        type="button"
+        data-transport-filter="${escapeHTML(filter.value)}"
+        aria-pressed="${filter.value === transportModeFilter ? "true" : "false"}"
+      >
+        ${contentHTML}
+      </button>
+    `;
+  }).join("");
 
   const pinnedRouteLabels = getPinnedRouteLabels();
   const pinsSummary = hasAnyPins()
@@ -1946,16 +1956,23 @@ function updateUserLocationMarker(lat, lon) {
     return;
   }
 
-  userLocationMarker = L.circleMarker([lat, lon], {
-    radius: 7,
-    color: "#065f46",
-    weight: 3,
-    fillColor: "#22c55e",
-    fillOpacity: 1,
-    opacity: 1
+  userLocationMarker = L.marker([lat, lon], {
+    icon: L.divIcon({
+      className: "",
+      html: `
+        <div class="user-location-marker">
+          <div class="user-location-pulse"></div>
+          <div class="user-location-core">
+            <img src="current_location_pin.svg" alt="Your location">
+          </div>
+        </div>
+      `,
+      iconSize: [56, 56],
+      iconAnchor: [28, 28]
+    }),
+    zIndexOffset: 2200,
+    interactive: false
   }).addTo(map);
-
-  userLocationMarker.bringToFront();
 }
 
 function requestUserLocation() {
