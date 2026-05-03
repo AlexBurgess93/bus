@@ -106,6 +106,9 @@ const themeToggleIcon = document.getElementById("themeToggleIcon");
 const journeyOverlay = document.getElementById("journeyOverlay");
 const journeyStartValue = document.getElementById("journeyStartValue");
 const journeyEndValue = document.getElementById("journeyEndValue");
+const journeyStartEditButton = document.getElementById("journeyStartEditButton");
+const journeyEndEditButton = document.getElementById("journeyEndEditButton");
+const journeySwapButton = document.getElementById("journeySwapButton");
 const journeyClearButton = document.getElementById("journeyClearButton");
 const stopMapAction = document.getElementById("stopMapAction");
 
@@ -1052,8 +1055,10 @@ function applyStopHitAreaStylesForZoom() {
 }
 
 function selectStop(stop) {
-  if (journeyPickMode === "start") {
-    setJourneyStartFromStop(stop);
+  if (journeyPickMode === "start" || journeyPickMode === "end") {
+    selectedStopId = stop.id;
+    showStopMapAction(stop);
+    highlightJourneyMarkers();
     return;
   }
 
@@ -1411,16 +1416,27 @@ function renderJourneyOverlay() {
   journeyOverlay.classList.toggle("is-hidden", !hasJourneyState);
 
   if (journeyStartValue) {
-    journeyStartValue.textContent = startStopId
-      ? getStopDisplayName(startStopId, "Nearest stop near you")
-      : "Use your location or choose start";
+    const pickingStart = journeyPickMode === "start";
+    journeyStartValue.textContent = pickingStart
+      ? "Select on map"
+      : startStopId
+        ? getStopDisplayName(startStopId, "Nearest stop near you")
+        : "Use your location or choose start";
+    journeyStartValue.classList.toggle("is-placeholder", pickingStart || !startStopId);
   }
 
   if (journeyEndValue) {
-    journeyEndValue.textContent = endStopId
-      ? getStopDisplayName(endStopId, "Destination")
-      : "Tap a stop destination";
+    const pickingEnd = journeyPickMode === "end";
+    journeyEndValue.textContent = pickingEnd
+      ? "Select on map"
+      : endStopId
+        ? getStopDisplayName(endStopId, "Destination")
+        : "Tap a stop destination";
+    journeyEndValue.classList.toggle("is-placeholder", pickingEnd || !endStopId);
   }
+
+  journeyStartEditButton?.classList.toggle("is-editing", journeyPickMode === "start");
+  journeyEndEditButton?.classList.toggle("is-editing", journeyPickMode === "end");
 }
 
 function hideStopMapAction() {
@@ -1430,7 +1446,11 @@ function hideStopMapAction() {
 
 function getStopMapActionHTML(stop) {
   if (journeyPickMode === "start") {
-    return `<button class="stop-map-action-button" type="button" data-stop-map-action="start">Set as start</button>`;
+    return `<button class="stop-map-action-button" type="button" data-stop-map-action="start">Add to From</button>`;
+  }
+
+  if (journeyPickMode === "end") {
+    return `<button class="stop-map-action-button" type="button" data-stop-map-action="destination">Add to To</button>`;
   }
 
   if (getJourneyStartStopId()) {
@@ -1595,6 +1615,35 @@ function renderJourneyPrompt(title, message, mode) {
   showSelectionPanel();
 }
 
+function setJourneyPickMode(mode) {
+  journeyPickMode = mode;
+  hideStopMapAction();
+  renderJourneyOverlay();
+  highlightJourneyMarkers();
+}
+
+function swapJourneyDirection() {
+  const startStopId = getJourneyStartStopId();
+  const endStopId = journeyEnd?.stopId || null;
+
+  if (!startStopId || !endStopId) return;
+
+  journeyStart = {
+    type: "stop",
+    stopId: endStopId
+  };
+
+  journeyEnd = {
+    type: "stop",
+    stopId: startStopId
+  };
+
+  journeyPickMode = null;
+  hideStopMapAction();
+  renderJourneyOverlay();
+  showJourneyOptions();
+}
+
 function clearJourneyPlan() {
   journeyStart = null;
   journeyEnd = null;
@@ -1686,11 +1735,24 @@ function drawJourneyOptionPaths(options) {
 function highlightJourneyMarkers() {
   const startStopId = getJourneyStartStopId();
   const endStopId = journeyEnd?.stopId || null;
+  const isCompleteJourney = Boolean(startStopId && endStopId && !journeyPickMode);
 
   applyDefaultStopMarkerStylesForZoom();
 
   Object.keys(stopMarkersByStopId).forEach(stopId => {
     const marker = stopMarkersByStopId[stopId];
+
+    if (isCompleteJourney && stopId !== startStopId && stopId !== endStopId) {
+      marker.setStyle({
+        radius: 0,
+        color: "transparent",
+        weight: 0,
+        fillColor: "transparent",
+        fillOpacity: 0,
+        opacity: 0
+      });
+      return;
+    }
 
     if (stopId === startStopId) {
       marker.setStyle({
@@ -1734,17 +1796,6 @@ function renderJourneyResultsPanel(options) {
 
   selectionPanelContent.innerHTML = `
     <section class="panel-section journey-panel-section">
-      <div class="journey-plan-summary">
-        <div class="journey-plan-row is-set">
-          <span class="journey-plan-label">Start</span>
-          <span class="journey-plan-value">${escapeHTML(startStop?.name || "Nearest stop")}</span>
-        </div>
-        <div class="journey-plan-row is-set">
-          <span class="journey-plan-label">End</span>
-          <span class="journey-plan-value">${escapeHTML(endStop?.name || "Destination")}</span>
-        </div>
-      </div>
-
       <div class="journey-result-header">
         <div class="panel-title">${options.length ? "Direct options" : "No direct option yet"}</div>
         <div class="panel-subtitle">${options.length ? "Tap an option to inspect that service." : "Start and end are set. Next step later is one-transfer routing."}</div>
@@ -1781,8 +1832,8 @@ function renderJourneyResultsPanel(options) {
     changeStartButton.addEventListener("click", event => {
       event.preventDefault();
       event.stopPropagation();
-      journeyPickMode = "start";
-      renderJourneyPrompt("Choose a new start", "Tap the stop you want to leave from.", "start");
+      setJourneyPickMode("start");
+      renderJourneyPrompt("Choose a new start", "Tap a stop, then confirm it above the map.", "start");
     });
   }
 
@@ -3008,6 +3059,30 @@ if (journeyClearButton) {
     event.stopPropagation();
     clearJourneyPlan();
     resetAppView();
+  });
+}
+
+if (journeyStartEditButton) {
+  journeyStartEditButton.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    setJourneyPickMode("start");
+  });
+}
+
+if (journeyEndEditButton) {
+  journeyEndEditButton.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    setJourneyPickMode("end");
+  });
+}
+
+if (journeySwapButton) {
+  journeySwapButton.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    swapJourneyDirection();
   });
 }
 
