@@ -832,25 +832,27 @@ function interpolateAlongShape(shapeCoords, stopA, stopB, progress) {
   ];
 }
 
-function createBusIcon(isSelected = false, variant = "scheduled", delayClass = "on-time") {
-  const classes = ["bus-icon"];
+function createBusIcon(trip, isSelected = false, variant = "scheduled", delayClass = "on-time") {
+  const routeNumber = escapeHTML(trip?.routeShortName || "?");
+  const classes = ["route-bus-marker", variant === "live" ? "live" : "scheduled"];
 
   if (isSelected) classes.push("selected");
-  if (variant === "live") classes.push("live-bus-icon", delayClass);
-  if (variant === "scheduled") classes.push("scheduled-bus-icon");
+  if (variant === "live") classes.push(delayClass);
 
-  const label = variant === "live" ? "L" : "S";
+  const iconSize = variant === "live" ? [48, 48] : [34, 34];
+  const iconAnchor = variant === "live" ? [24, 24] : [17, 17];
 
   return L.divIcon({
     className: "",
     html: `
-      <div class="${classes.join(" ")}">
-        <span class="bus-emoji">🚌</span>
-        <span class="bus-mode-label">${label}</span>
+      <div class="${classes.join(" ")}" aria-label="${variant} route ${routeNumber}">
+        ${variant === "live" ? `<span class="route-bus-pulse"></span>` : ""}
+        <span class="route-bus-badge">${routeNumber}</span>
+        ${variant === "scheduled" ? `<span class="route-bus-scheduled-dot" aria-hidden="true"></span>` : ""}
       </div>
     `,
-    iconSize: [32, 32],
-    iconAnchor: [16, 16]
+    iconSize,
+    iconAnchor
   });
 }
 
@@ -945,7 +947,7 @@ function focusSelectedBus(tripId, variant = selectedBusVariant) {
     const marker = busMarkersByTripId[id];
     const isSelected = id === selectedTripId && variant === "scheduled";
 
-    marker.setIcon(createBusIcon(isSelected, "scheduled"));
+    marker.setIcon(createBusIcon(timetableTrips.find(trip => trip.tripId === id), isSelected, "scheduled"));
     marker.setZIndexOffset(isSelected ? 1200 : 500);
   });
 
@@ -954,7 +956,7 @@ function focusSelectedBus(tripId, variant = selectedBusVariant) {
     const delayClass = getDelayStatus(getStableLiveDelaySeconds(id)).className;
     const isSelected = id === selectedTripId && variant === "live";
 
-    marker.setIcon(createBusIcon(isSelected, "live", delayClass));
+    marker.setIcon(createBusIcon(timetableTrips.find(trip => trip.tripId === id), isSelected, "live", delayClass));
     marker.setZIndexOffset(isSelected ? 1300 : 700);
   });
 
@@ -977,14 +979,14 @@ function focusTripsForStop(stopId, upcomingItems) {
 
   Object.keys(busMarkersByTripId).forEach(tripId => {
     const marker = busMarkersByTripId[tripId];
-    marker.setIcon(createBusIcon(highlightedTripIds.has(tripId), "scheduled"));
+    marker.setIcon(createBusIcon(timetableTrips.find(trip => trip.tripId === tripId), highlightedTripIds.has(tripId), "scheduled"));
     marker.setZIndexOffset(highlightedTripIds.has(tripId) ? 1000 : 500);
   });
 
   Object.keys(liveBusMarkersByTripId).forEach(tripId => {
     const marker = liveBusMarkersByTripId[tripId];
     const delayClass = getDelayStatus(getStableLiveDelaySeconds(tripId)).className;
-    marker.setIcon(createBusIcon(highlightedTripIds.has(tripId), "live", delayClass));
+    marker.setIcon(createBusIcon(timetableTrips.find(trip => trip.tripId === tripId), highlightedTripIds.has(tripId), "live", delayClass));
     marker.setZIndexOffset(highlightedTripIds.has(tripId) ? 1100 : 700);
   });
 
@@ -1004,14 +1006,14 @@ function clearBusFocus() {
 
   Object.keys(busMarkersByTripId).forEach(id => {
     const marker = busMarkersByTripId[id];
-    marker.setIcon(createBusIcon(false, "scheduled"));
+    marker.setIcon(createBusIcon(timetableTrips.find(trip => trip.tripId === id), false, "scheduled"));
     marker.setZIndexOffset(500);
   });
 
   Object.keys(liveBusMarkersByTripId).forEach(id => {
     const marker = liveBusMarkersByTripId[id];
     const delayClass = getDelayStatus(getStableLiveDelaySeconds(id)).className;
-    marker.setIcon(createBusIcon(false, "live", delayClass));
+    marker.setIcon(createBusIcon(timetableTrips.find(trip => trip.tripId === id), false, "live", delayClass));
     marker.setZIndexOffset(700);
   });
 
@@ -1328,7 +1330,7 @@ function updateBusPositionsLive() {
       busMarkersByTripId[trip.tripId].setLatLng(scheduledPosition.position);
     } else {
       const marker = L.marker(scheduledPosition.position, {
-        icon: createBusIcon(false, "scheduled"),
+        icon: createBusIcon(trip, false, "scheduled"),
         zIndexOffset: 500
       }).addTo(map);
 
@@ -1352,7 +1354,7 @@ function updateBusPositionsLive() {
       liveBusMarkersByTripId[trip.tripId].setLatLng(livePosition.position);
     } else {
       const marker = L.marker(livePosition.position, {
-        icon: createBusIcon(false, "live", delayClass),
+        icon: createBusIcon(trip, false, "live", delayClass),
         zIndexOffset: 700
       }).addTo(map);
 

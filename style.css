@@ -529,6 +529,137 @@ main {
   background: #4b5563;
 }
 
+
+/* Route-number bus markers used by the beta live/scheduled/ghost preview. */
+.route-bus-marker {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateZ(0);
+}
+
+.route-bus-badge {
+  position: relative;
+  z-index: 2;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #111827;
+  border: 2px solid #111827;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.26);
+}
+
+.route-bus-marker.scheduled .route-bus-badge {
+  min-width: 28px;
+  height: 28px;
+  border-color: #64748b;
+  color: #334155;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 2px 7px rgba(15, 23, 42, 0.18);
+  opacity: 0.82;
+}
+
+.route-bus-marker.live .route-bus-badge {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 8px;
+  border-width: 3px;
+  font-size: 12px;
+  background: #ffffff;
+}
+
+.route-bus-marker.live.ahead {
+  color: #16a34a;
+}
+
+.route-bus-marker.live.behind {
+  color: #f97316;
+}
+
+.route-bus-marker.live.on-time {
+  color: #6b7280;
+}
+
+.route-bus-marker.live.ahead .route-bus-badge {
+  border-color: #16a34a;
+  color: #047857;
+  box-shadow: 0 4px 16px rgba(22, 163, 74, 0.42);
+}
+
+.route-bus-marker.live.behind .route-bus-badge {
+  border-color: #f97316;
+  color: #c2410c;
+  box-shadow: 0 4px 16px rgba(249, 115, 22, 0.46);
+}
+
+.route-bus-marker.live.on-time .route-bus-badge {
+  border-color: #6b7280;
+  color: #374151;
+  box-shadow: 0 3px 12px rgba(107, 114, 128, 0.28);
+}
+
+.route-bus-marker.selected .route-bus-badge {
+  transform: scale(1.08);
+  border-width: 3px;
+}
+
+.route-bus-pulse {
+  position: absolute;
+  z-index: 1;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 3px solid currentColor;
+  opacity: 0.58;
+  animation: live-bus-pulse 1.7s ease-out infinite;
+}
+
+.route-bus-marker.live.selected .route-bus-pulse {
+  width: 48px;
+  height: 48px;
+  opacity: 0.7;
+}
+
+.route-bus-scheduled-dot {
+  position: absolute;
+  z-index: 3;
+  right: 1px;
+  bottom: 1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #64748b;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.18);
+}
+
+@keyframes live-bus-pulse {
+  0% {
+    transform: scale(0.72);
+    opacity: 0.58;
+  }
+  72% {
+    transform: scale(1.45);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.45);
+    opacity: 0;
+  }
+}
+
 .ghost-route-segment {
   stroke-linecap: round;
   stroke-linejoin: round;
