@@ -839,14 +839,14 @@ function setMarkerVisible(marker, visible) {
 
 function getScheduledMarkerOpacity(tripId) {
   if (betaTrackingMode === "live") return 0;
-  if (selectedTripId && tripId !== selectedTripId) return 0.15;
+  if (selectedTripId && tripId !== selectedTripId) return 0;
   if (selectedStopId && !highlightedTripIds.has(tripId)) return 0.15;
   return betaTrackingMode === "ghost" ? 0.72 : 1;
 }
 
 function getLiveMarkerOpacity(tripId) {
   if (betaTrackingMode === "scheduled") return 0;
-  if (selectedTripId && tripId !== selectedTripId) return 0.15;
+  if (selectedTripId && tripId !== selectedTripId) return 0;
   if (selectedStopId && !highlightedTripIds.has(tripId)) return 0.15;
   return 1;
 }
