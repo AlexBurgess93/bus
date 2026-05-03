@@ -71,7 +71,7 @@ const MAP_SETTLE_REFRESH_DELAY_MS = 120;
 let hasWarnedAboutNoActiveTrips = false;
 let userLocationMarker = null;
 
-let betaTrackingMode = "live";
+let betaTrackingMode = "scheduled";
 let liveBusMarkersByTripId = {};
 let latestLiveTripPositionsByTripId = {};
 let ghostRouteSegmentLine = null;
@@ -94,6 +94,9 @@ const KEEP_PROTOTYPE_VISIBLE_WHEN_NO_REAL_TIME_BUSES = true;
 const selectionPanel = document.getElementById("selectionPanel");
 const selectionPanelContent = document.getElementById("selectionPanelContent");
 const closeSelectionPanelButton = document.getElementById("closeSelectionPanelButton");
+const liveNoticeModal = document.getElementById("liveNoticeModal");
+const liveNoticeOkButton = document.getElementById("liveNoticeOkButton");
+const LIVE_NOTICE_SEEN_KEY = "tripTrackerLiveNoticeSeen";
 const locateUserButton = document.getElementById("locateUserButton");
 const themeToggleButton = document.getElementById("themeToggleButton");
 const themeToggleIcon = document.getElementById("themeToggleIcon");
@@ -2345,6 +2348,20 @@ function refreshMapAfterInteraction() {
   }, MAP_SETTLE_REFRESH_DELAY_MS);
 }
 
+function showLiveNoticeOnce() {
+  if (!liveNoticeModal) return;
+  if (localStorage.getItem(LIVE_NOTICE_SEEN_KEY) === "true") return;
+
+  liveNoticeModal.classList.remove("is-hidden");
+}
+
+function closeLiveNoticeModal() {
+  if (!liveNoticeModal) return;
+
+  localStorage.setItem(LIVE_NOTICE_SEEN_KEY, "true");
+  liveNoticeModal.classList.add("is-hidden");
+}
+
 function setBetaTrackingMode(mode) {
   betaTrackingMode = mode;
 
@@ -2378,7 +2395,13 @@ betaModeButtons.forEach(button => {
   button.addEventListener("click", event => {
     event.preventDefault();
     event.stopPropagation();
-    setBetaTrackingMode(button.dataset.betaMode);
+
+    const selectedMode = button.dataset.betaMode;
+    setBetaTrackingMode(selectedMode);
+
+    if (selectedMode === "live") {
+      showLiveNoticeOnce();
+    }
   });
 });
 
@@ -2437,6 +2460,21 @@ selectionPanel.addEventListener("touchstart", event => {
   event.stopPropagation();
 }, { passive: true });
 
+if (liveNoticeOkButton) {
+  liveNoticeOkButton.addEventListener("click", event => {
+    event.preventDefault();
+    closeLiveNoticeModal();
+  });
+}
+
+if (liveNoticeModal) {
+  liveNoticeModal.addEventListener("click", event => {
+    if (event.target === liveNoticeModal) {
+      closeLiveNoticeModal();
+    }
+  });
+}
+
 async function init() {
   updateThemeToggleButton();
   hideSelectionPanel();
@@ -2448,7 +2486,7 @@ async function init() {
 
   map.invalidateSize();
   updateBusPositionsLive();
-  setBetaTrackingMode("live");
+  setBetaTrackingMode("scheduled");
   updateNetworkLayer();
 
   busUpdateTimerId = window.setInterval(() => {

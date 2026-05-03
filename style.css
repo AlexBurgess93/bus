@@ -1733,3 +1733,84 @@ html[data-map-theme="dark"] .route-bus-marker.transport-transit .route-bus-badge
   background: #18181b;
   color: #ffffff;
 }
+
+/* Live/simulated mode disclosure modal */
+.app-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(6px);
+}
+
+.app-modal.is-hidden {
+  display: none;
+}
+
+.app-modal-card {
+  width: min(92vw, 360px);
+  padding: 20px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.98);
+  color: #111827;
+  box-shadow: 0 22px 60px rgba(15, 23, 42, 0.32);
+}
+
+.app-modal-card h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  line-height: 1.15;
+  font-weight: 950;
+  color: #111827;
+}
+
+.app-modal-card p {
+  margin: 0 0 18px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #475569;
+}
+
+.app-modal-button {
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-radius: 999px;
+  background: #111827;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.app-modal-button:active {
+  transform: scale(0.98);
+}
+
+body.is-dark-map .app-modal {
+  background: rgba(0, 0, 0, 0.56);
+}
+
+body.is-dark-map .app-modal-card {
+  background: #1f2933;
+  color: #f8fafc;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+body.is-dark-map .app-modal-card h2 {
+  color: #f8fafc;
+}
+
+body.is-dark-map .app-modal-card p {
+  color: #cbd5e1;
+}
+
+body.is-dark-map .app-modal-button {
+  background: #f8fafc;
+  color: #111827;
+}
