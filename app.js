@@ -25,7 +25,11 @@ let allShapes = {};
 let allRoutes = [];
 let allTrips = [];
 let timetableTrips = [];
+let unfilteredTimetableTrips = [];
 let stopUpcoming = {};
+let unfilteredStopUpcoming = {};
+let serviceCalendarRows = [];
+let activeServiceIdsForToday = new Set();
 let stopLookup = {};
 let busMarkersByTripId = {};
 let stopMarkersByStopId = {};
@@ -37,6 +41,7 @@ let serviceDayOffsetSeconds = 0;
 let simulatedCurrentSecondsOverride = null;
 let busUpdateTimerId = null;
 let hasWarnedAboutNoActiveTrips = false;
+let userLocationMarker = null;
 
 let betaTrackingMode = "live";
 let liveBusMarkersByTripId = {};
@@ -53,6 +58,7 @@ const KEEP_PROTOTYPE_VISIBLE_WHEN_NO_REAL_TIME_BUSES = true;
 const selectionPanel = document.getElementById("selectionPanel");
 const selectionPanelContent = document.getElementById("selectionPanelContent");
 const closeSelectionPanelButton = document.getElementById("closeSelectionPanelButton");
+const locateUserButton = document.getElementById("locateUserButton");
 
 function escapeHTML(value) {
   return String(value ?? "")
@@ -161,15 +167,32 @@ function getStableLiveDelaySeconds(tripId) {
 }
 
 function getDelayStatus(delaySeconds) {
+  const roundedMinutes = Math.round(Math.abs(delaySeconds) / 60);
+
   if (delaySeconds <= -60) {
-    return { label: "Ahead", className: "ahead", text: `${Math.abs(Math.round(delaySeconds / 60))} min ahead` };
+    return {
+      label: "Ahead",
+      className: "ahead",
+      text: `-${roundedMinutes} min`,
+      detail: "ahead"
+    };
   }
 
   if (delaySeconds >= 60) {
-    return { label: "Behind", className: "behind", text: `${Math.round(delaySeconds / 60)} min behind` };
+    return {
+      label: "Behind",
+      className: "behind",
+      text: `+${roundedMinutes} min`,
+      detail: "behind"
+    };
   }
 
-  return { label: "On time", className: "on-time", text: "on time" };
+  return {
+    label: "On time",
+    className: "on-time",
+    text: "±0 min",
+    detail: "on time"
+  };
 }
 
 function getDelayColour(delaySeconds) {
@@ -177,7 +200,7 @@ function getDelayColour(delaySeconds) {
 
   if (status.className === "ahead") return "#16a34a";
   if (status.className === "behind") return "#f59e0b";
-  return "#2563eb";
+  return "#6b7280";
 }
 
 function getRoutePathColour() {
@@ -238,6 +261,12 @@ function drawGhostRouteSegmentForTrip(tripId) {
   if (!scheduledPosition?.position || !livePosition?.position || !shapeCoords) return;
 
   const delaySeconds = getStableLiveDelaySeconds(tripId);
+
+  // Avoid visual noise for tiny differences.
+  // Under 30 seconds, the scheduled/live positions are effectively the same for this demo.
+  if (Math.abs(delaySeconds) < 30) return;
+
+  const delayStatus = getDelayStatus(delaySeconds);
   const segmentCoords = getShapeSegmentBetweenPositions(
     shapeCoords,
     scheduledPosition.position,
@@ -248,10 +277,12 @@ function drawGhostRouteSegmentForTrip(tripId) {
 
   ghostRouteSegmentLine = L.polyline(segmentCoords, {
     color: getDelayColour(delaySeconds),
-    weight: 7,
-    opacity: 0.95,
+    weight: 8,
+    opacity: 0.96,
+    dashArray: delayStatus.className === "on-time" ? null : "8 10",
     lineCap: "round",
-    lineJoin: "round"
+    lineJoin: "round",
+    className: `ghost-route-segment ${delayStatus.className}`
   }).addTo(map);
 
   ghostRouteSegmentLine.bringToFront();
@@ -282,8 +313,9 @@ function renderBusPanel(trip, variant = selectedBusVariant) {
           <div class="panel-title">${escapeHTML(trip.headsign)}</div>
         </div>
 
-        <div class="beta-delay-chip ${escapeHTML(delayStatus.className)}">
-          ${escapeHTML(delayStatus.text)}
+        <div class="beta-delay-chip ${escapeHTML(delayStatus.className)}" title="${escapeHTML(delayStatus.detail)}">
+          <span class="delay-value">${escapeHTML(delayStatus.text)}</span>
+          <span class="delay-detail">${escapeHTML(delayStatus.detail)}</span>
         </div>
       </div>
 
@@ -804,25 +836,27 @@ function interpolateAlongShape(shapeCoords, stopA, stopB, progress) {
   ];
 }
 
-function createBusIcon(isSelected = false, variant = "scheduled", delayClass = "on-time") {
-  const classes = ["bus-icon"];
+function createBusIcon(trip, isSelected = false, variant = "scheduled", delayClass = "on-time") {
+  const routeNumber = escapeHTML(trip?.routeShortName || "?");
+  const classes = ["route-bus-marker", variant === "live" ? "live" : "scheduled"];
 
   if (isSelected) classes.push("selected");
-  if (variant === "live") classes.push("live-bus-icon", delayClass);
-  if (variant === "scheduled") classes.push("scheduled-bus-icon");
+  if (variant === "live") classes.push(delayClass);
 
-  const label = variant === "live" ? "L" : "S";
+  const iconSize = variant === "live" ? [48, 48] : [34, 34];
+  const iconAnchor = variant === "live" ? [24, 24] : [17, 17];
 
   return L.divIcon({
     className: "",
     html: `
-      <div class="${classes.join(" ")}">
-        <span class="bus-emoji">🚌</span>
-        <span class="bus-mode-label">${label}</span>
+      <div class="${classes.join(" ")}" aria-label="${variant} route ${routeNumber}">
+        ${variant === "live" ? `<span class="route-bus-pulse"></span>` : ""}
+        <span class="route-bus-badge">${routeNumber}</span>
+        ${variant === "scheduled" ? `<span class="route-bus-scheduled-dot" aria-hidden="true"></span>` : ""}
       </div>
     `,
-    iconSize: [32, 32],
-    iconAnchor: [16, 16]
+    iconSize,
+    iconAnchor
   });
 }
 
@@ -917,7 +951,7 @@ function focusSelectedBus(tripId, variant = selectedBusVariant) {
     const marker = busMarkersByTripId[id];
     const isSelected = id === selectedTripId && variant === "scheduled";
 
-    marker.setIcon(createBusIcon(isSelected, "scheduled"));
+    marker.setIcon(createBusIcon(timetableTrips.find(trip => trip.tripId === id), isSelected, "scheduled"));
     marker.setZIndexOffset(isSelected ? 1200 : 500);
   });
 
@@ -926,7 +960,7 @@ function focusSelectedBus(tripId, variant = selectedBusVariant) {
     const delayClass = getDelayStatus(getStableLiveDelaySeconds(id)).className;
     const isSelected = id === selectedTripId && variant === "live";
 
-    marker.setIcon(createBusIcon(isSelected, "live", delayClass));
+    marker.setIcon(createBusIcon(timetableTrips.find(trip => trip.tripId === id), isSelected, "live", delayClass));
     marker.setZIndexOffset(isSelected ? 1300 : 700);
   });
 
@@ -949,14 +983,14 @@ function focusTripsForStop(stopId, upcomingItems) {
 
   Object.keys(busMarkersByTripId).forEach(tripId => {
     const marker = busMarkersByTripId[tripId];
-    marker.setIcon(createBusIcon(highlightedTripIds.has(tripId), "scheduled"));
+    marker.setIcon(createBusIcon(timetableTrips.find(trip => trip.tripId === tripId), highlightedTripIds.has(tripId), "scheduled"));
     marker.setZIndexOffset(highlightedTripIds.has(tripId) ? 1000 : 500);
   });
 
   Object.keys(liveBusMarkersByTripId).forEach(tripId => {
     const marker = liveBusMarkersByTripId[tripId];
     const delayClass = getDelayStatus(getStableLiveDelaySeconds(tripId)).className;
-    marker.setIcon(createBusIcon(highlightedTripIds.has(tripId), "live", delayClass));
+    marker.setIcon(createBusIcon(timetableTrips.find(trip => trip.tripId === tripId), highlightedTripIds.has(tripId), "live", delayClass));
     marker.setZIndexOffset(highlightedTripIds.has(tripId) ? 1100 : 700);
   });
 
@@ -976,14 +1010,14 @@ function clearBusFocus() {
 
   Object.keys(busMarkersByTripId).forEach(id => {
     const marker = busMarkersByTripId[id];
-    marker.setIcon(createBusIcon(false, "scheduled"));
+    marker.setIcon(createBusIcon(timetableTrips.find(trip => trip.tripId === id), false, "scheduled"));
     marker.setZIndexOffset(500);
   });
 
   Object.keys(liveBusMarkersByTripId).forEach(id => {
     const marker = liveBusMarkersByTripId[id];
     const delayClass = getDelayStatus(getStableLiveDelaySeconds(id)).className;
-    marker.setIcon(createBusIcon(false, "live", delayClass));
+    marker.setIcon(createBusIcon(timetableTrips.find(trip => trip.tripId === id), false, "live", delayClass));
     marker.setZIndexOffset(700);
   });
 
@@ -1072,28 +1106,218 @@ function getUpcomingForStop(stopId, minutesAhead = 30) {
     .slice(0, 8);
 }
 
+
+function findNearestStop(lat, lon) {
+  let closestStop = null;
+  let closestDistance = Infinity;
+
+  Object.values(stopLookup).forEach(stop => {
+    const distance = distanceBetweenPoints(
+      [lat, lon],
+      [stop.lat, stop.lon]
+    );
+
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestStop = stop;
+    }
+  });
+
+  return closestStop;
+}
+
+function showLocationMessage(title, message) {
+  selectionPanelContent.innerHTML = `
+    <section class="panel-section location-panel-section">
+      <div class="panel-main-row">
+        <div class="panel-text-stack">
+          <div class="panel-title">${escapeHTML(title)}</div>
+          <div class="panel-subtitle">${escapeHTML(message)}</div>
+        </div>
+      </div>
+    </section>
+  `;
+
+  showSelectionPanel();
+}
+
+function selectNearestStopFromLocation(lat, lon) {
+  const nearestStop = findNearestStop(lat, lon);
+
+  if (!nearestStop) {
+    showLocationMessage("No nearby stop found", "The app could not find a stop in the current dataset.");
+    return;
+  }
+
+  const upcoming = getUpcomingForStop(nearestStop.id, 30);
+
+  clearBusFocus();
+  focusTripsForStop(nearestStop.id, upcoming);
+  drawStopUpcomingPaths(upcoming);
+  highlightRelevantStopMarkers(nearestStop.id, upcoming);
+  renderStopPanel(nearestStop, upcoming);
+
+  map.setView([nearestStop.lat, nearestStop.lon], Math.max(map.getZoom(), 15), {
+    animate: true
+  });
+}
+
+function updateUserLocationMarker(lat, lon) {
+  if (userLocationMarker) {
+    userLocationMarker.setLatLng([lat, lon]);
+    return;
+  }
+
+  userLocationMarker = L.circleMarker([lat, lon], {
+    radius: 7,
+    color: "#065f46",
+    weight: 3,
+    fillColor: "#22c55e",
+    fillOpacity: 1,
+    opacity: 1
+  }).addTo(map);
+
+  userLocationMarker.bringToFront();
+}
+
+function requestUserLocation() {
+  if (!navigator.geolocation) {
+    showLocationMessage("Location unavailable", "This browser does not support GPS location.");
+    return;
+  }
+
+  showLocationMessage("Finding nearest stop…", "Allow location access when your browser asks.");
+
+  navigator.geolocation.getCurrentPosition(
+    position => {
+      const lat = position.coords.latitude;
+      const lon = position.coords.longitude;
+
+      updateUserLocationMarker(lat, lon);
+      selectNearestStopFromLocation(lat, lon);
+    },
+    error => {
+      const message = error.code === error.PERMISSION_DENIED
+        ? "Location access was denied."
+        : "The app could not get your current location.";
+
+      showLocationMessage("Location not available", message);
+    },
+    {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 30000
+    }
+  );
+}
+
+
+function getLocalDateNumber(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return Number(`${year}${month}${day}`);
+}
+
+function getCalendarDayField(date = new Date()) {
+  const dayFields = [
+    "sunday",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday"
+  ];
+
+  return dayFields[date.getDay()];
+}
+
+function getActiveServiceIdsForDate(date = new Date()) {
+  const todayNumber = getLocalDateNumber(date);
+  const dayField = getCalendarDayField(date);
+  const activeServiceIds = new Set();
+
+  serviceCalendarRows.forEach(service => {
+    const startDate = Number(service.startDate);
+    const endDate = Number(service.endDate);
+    const runsToday = service[dayField] === true || service[dayField] === "1" || service[dayField] === 1;
+
+    if (runsToday && todayNumber >= startDate && todayNumber <= endDate) {
+      activeServiceIds.add(String(service.serviceId));
+    }
+  });
+
+  return activeServiceIds;
+}
+
+function filterStopUpcomingByServiceIds(stopUpcomingLookup, activeServiceIds) {
+  const filtered = {};
+
+  Object.keys(stopUpcomingLookup).forEach(stopId => {
+    const activeItems = stopUpcomingLookup[stopId].filter(item => {
+      return activeServiceIds.has(String(item.serviceId));
+    });
+
+    if (activeItems.length > 0) {
+      filtered[stopId] = activeItems;
+    }
+  });
+
+  return filtered;
+}
+
+function applyTodayServiceFilter() {
+  activeServiceIdsForToday = getActiveServiceIdsForDate(new Date());
+
+  if (activeServiceIdsForToday.size === 0) {
+    console.warn("No active service_ids found for today's local date. Falling back to all timetable trips.");
+    timetableTrips = unfilteredTimetableTrips;
+    stopUpcoming = unfilteredStopUpcoming;
+    return;
+  }
+
+  timetableTrips = unfilteredTimetableTrips.filter(trip => {
+    return activeServiceIdsForToday.has(String(trip.serviceId));
+  });
+
+  stopUpcoming = filterStopUpcomingByServiceIds(unfilteredStopUpcoming, activeServiceIdsForToday);
+
+  console.log("Date filter applied", {
+    localDate: getLocalDateNumber(new Date()),
+    activeServiceIds: activeServiceIdsForToday.size,
+    unfilteredTrips: unfilteredTimetableTrips.length,
+    activeTrips: timetableTrips.length
+  });
+}
+
 async function loadCoreData() {
-  const [routesRes, tripsRes, shapesRes, timetableRes, stopUpcomingRes] = await Promise.all([
+  const [routesRes, tripsRes, shapesRes, timetableRes, stopUpcomingRes, calendarRes] = await Promise.all([
     fetch("data/processed/routes.json"),
     fetch("data/processed/trips.json"),
     fetch("data/processed/shapes.json"),
     fetch("data/processed/trip-stop-times.json"),
-    fetch("data/processed/stop-upcoming.json")
+    fetch("data/processed/stop-upcoming.json"),
+    fetch("data/processed/calendar.json")
   ]);
 
   allRoutes = await routesRes.json();
   allTrips = await tripsRes.json();
   allShapes = await shapesRes.json();
-  timetableTrips = await timetableRes.json();
-  stopUpcoming = await stopUpcomingRes.json();
+  unfilteredTimetableTrips = await timetableRes.json();
+  unfilteredStopUpcoming = await stopUpcomingRes.json();
+  serviceCalendarRows = await calendarRes.json();
 
+  applyTodayServiceFilter();
   chooseServiceDayOffset();
 
   console.log("Core data loaded");
   console.log("Routes:", allRoutes.length);
   console.log("Trips:", allTrips.length);
   console.log("Shapes:", Object.keys(allShapes).length);
-  console.log("Filtered timetable trips:", timetableTrips.length);
+  console.log("Unfiltered timetable trips:", unfilteredTimetableTrips.length);
+  console.log("Today timetable trips:", timetableTrips.length);
   console.log("Stop upcoming records:", Object.keys(stopUpcoming).length);
 }
 
@@ -1195,7 +1419,7 @@ function updateBusPositionsLive() {
       busMarkersByTripId[trip.tripId].setLatLng(scheduledPosition.position);
     } else {
       const marker = L.marker(scheduledPosition.position, {
-        icon: createBusIcon(false, "scheduled"),
+        icon: createBusIcon(trip, false, "scheduled"),
         zIndexOffset: 500
       }).addTo(map);
 
@@ -1219,7 +1443,7 @@ function updateBusPositionsLive() {
       liveBusMarkersByTripId[trip.tripId].setLatLng(livePosition.position);
     } else {
       const marker = L.marker(livePosition.position, {
-        icon: createBusIcon(false, "live", delayClass),
+        icon: createBusIcon(trip, false, "live", delayClass),
         zIndexOffset: 700
       }).addTo(map);
 
@@ -1308,6 +1532,18 @@ betaModeButtons.forEach(button => {
     setBetaTrackingMode(button.dataset.betaMode);
   });
 });
+
+if (locateUserButton) {
+  locateUserButton.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    requestUserLocation();
+  });
+
+  locateUserButton.addEventListener("touchstart", event => {
+    event.stopPropagation();
+  }, { passive: true });
+}
 
 map.on("zoomend", () => {
   // Only restyle all stops when there is no active selection.
