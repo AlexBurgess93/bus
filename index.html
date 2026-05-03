@@ -38,6 +38,7 @@
           <span class="journey-field-label">From</span>
           <input id="journeyStartInput" class="journey-field-input" type="text" inputmode="search" autocomplete="off" placeholder="Use my location or enter start" />
           <span id="journeyStartValue" class="journey-field-value is-hidden-text">Use your location</span>
+          <div id="journeyStartSuggestions" class="journey-place-suggestions is-hidden" role="listbox" aria-label="Start location suggestions"></div>
         </span>
       </label>
       <label class="journey-field journey-field-end" aria-label="Destination">
@@ -46,6 +47,7 @@
           <span class="journey-field-label">To</span>
           <input id="journeyEndInput" class="journey-field-input" type="text" inputmode="search" autocomplete="off" placeholder="Where to? e.g. Optus Stadium" />
           <span id="journeyEndValue" class="journey-field-value is-hidden-text">Destination</span>
+          <div id="journeyEndSuggestions" class="journey-place-suggestions is-hidden" role="listbox" aria-label="Destination suggestions"></div>
         </span>
       </label>
       <button id="journeySwapButton" class="journey-overlay-swap" type="button" aria-label="Reverse start and destination"><img src="reverse_swap_path_icon.svg" alt="" aria-hidden="true" /></button>
