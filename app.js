@@ -147,6 +147,13 @@ function escapeHTML(value) {
     .replaceAll("'", "&#039;");
 }
 
+function cleanStopName(name) {
+  return String(name ?? "")
+    .replace(/^Ferry Route\s*/i, "")
+    .replace(/^Bus Route\s*/i, "")
+    .trim();
+}
+
 
 // ---------- Bottom context panel ----------
 function showSelectionPanel() {
@@ -831,9 +838,12 @@ function renderBusPanel(trip, variant = selectedBusVariant) {
   selectedPanelType = "bus";
 
   const latestPosition = latestTripPositionsByTripId[trip.tripId];
-  const betweenText = latestPosition
-    ? `${latestPosition.stopA?.name || "Unknown stop"} → ${latestPosition.stopB?.name || "Unknown stop"}`
-    : "Between stops unavailable";
+  const fromStopName = latestPosition?.stopA?.name
+    ? cleanStopName(latestPosition.stopA.name)
+    : "Current stop unavailable";
+  const toStopName = latestPosition?.stopB?.name
+    ? cleanStopName(latestPosition.stopB.name)
+    : "Next stop unavailable";
 
   const delaySeconds = getStableLiveDelaySeconds(trip.tripId);
   const delayStatus = getDelayStatus(delaySeconds);
@@ -855,9 +865,10 @@ function renderBusPanel(trip, variant = selectedBusVariant) {
         </div>
       </div>
 
-      <div class="between-card">
-        <div class="between-label">Between</div>
-        <div class="between-value">${escapeHTML(betweenText)}</div>
+      <div class="route-card">
+        <div class="route-stop route-stop-from">${escapeHTML(fromStopName)}</div>
+        <div class="route-arrow">↓</div>
+        <div class="route-stop route-stop-to">${escapeHTML(toStopName)}</div>
       </div>
     </section>
   `;
