@@ -120,6 +120,7 @@ const journeyEndSuggestions = document.getElementById("journeyEndSuggestions");
 const journeyStartEditButton = document.getElementById("journeyStartEditButton");
 const journeyEndEditButton = document.getElementById("journeyEndEditButton");
 const journeySwapButton = document.getElementById("journeySwapButton");
+const journeyUseLocationInline = document.getElementById("journeyUseLocationInline");
 const journeyClearButton = document.getElementById("journeyClearButton");
 const journeySearchButton = document.getElementById("journeySearchButton");
 const stopMapAction = document.getElementById("stopMapAction");
@@ -1325,7 +1326,7 @@ function updateNetworkLayer() {
 
   // The network layer is for wide/mid zoom. Once the user is close enough,
   // detailed markers, stop dots, and selected route paths take over.
-  if (selectedTripId || selectedStopId || journeyStart || journeyEnd || journeyPickMode || latestJourneyOptions.length || zoom > NETWORK_LAYER_MAX_ZOOM) {
+  if (selectedTripId || selectedStopId || journeyPickMode || latestJourneyOptions.length || zoom > NETWORK_LAYER_MAX_ZOOM) {
     clearNetworkLayer();
     return;
   }
@@ -1627,6 +1628,8 @@ function renderJourneyOverlay() {
   // The destination planner is now a permanent control. It can still peek/collapse,
   // but it should not disappear just because no journey has been entered yet.
   journeyOverlay.classList.remove("is-hidden");
+  journeyOverlay.classList.toggle("has-start", Boolean(startStopId));
+  journeyOverlay.classList.toggle("has-end", Boolean(endStopId));
 
   if (journeyStartValue) {
     const pickingStart = journeyPickMode === "start";
@@ -2190,6 +2193,37 @@ function drawJourneyWalkTimeChip(latLng, minutes, extraClass = "") {
   journeyStopTimeMarkers.push(marker);
 }
 
+function drawJourneyEndpointArrivalMarker(latLng, arrivalSeconds) {
+  if (!Array.isArray(latLng) || !Number.isFinite(arrivalSeconds)) return;
+
+  const arrivalText = formatJourneyMinuteBadgeFromSeconds(arrivalSeconds);
+
+  const dot = L.circleMarker(latLng, {
+    radius: 8,
+    color: "#6d28d9",
+    weight: 4,
+    fillColor: "#8b5cf6",
+    fillOpacity: 1,
+    opacity: 1,
+    interactive: false,
+    className: "journey-final-arrival-dot"
+  }).addTo(map);
+
+  const chip = L.marker(latLng, {
+    interactive: false,
+    zIndexOffset: 1600,
+    icon: L.divIcon({
+      className: "journey-stop-time-marker journey-final-arrival-marker",
+      html: `<span>${escapeHTML(arrivalText)}</span>`,
+      iconSize: [44, 22],
+      iconAnchor: [22, 32]
+    })
+  }).addTo(map);
+
+  journeyRouteLines.push(dot);
+  journeyStopTimeMarkers.push(chip);
+}
+
 function drawJourneyWalkingLeg(fromLatLng, toLatLng, minutes, extraClass = "") {
   if (!Array.isArray(fromLatLng) || !Array.isArray(toLatLng)) return;
 
@@ -2225,6 +2259,7 @@ function drawJourneyWalkingLegs(option) {
 
   drawJourneyWalkingLeg(startPoint, startStopPoint, option?.startWalkMinutes, "journey-start-walk-line");
   drawJourneyWalkingLeg(endStopPoint, endPoint, option?.endWalkMinutes, "journey-end-walk-line");
+  drawJourneyEndpointArrivalMarker(endPoint, option?.finalArrivalSeconds);
 }
 
 
@@ -2726,6 +2761,49 @@ function applyJourneyPlaceAsEnd(place) {
     nearestStopId: nearest.stop.id,
     nearestStopDistanceMetres: nearest.distanceMetres
   };
+}
+
+async function useCurrentLocationAsJourneyStart() {
+  try {
+    showJourneySearchStatus("Finding your location…", "Allow location access when your browser asks.");
+
+    let lat;
+    let lon;
+
+    if (userLocation?.nearestStopId) {
+      lat = userLocation.lat;
+      lon = userLocation.lon;
+    } else {
+      const position = await getCurrentBrowserLocation();
+      lat = position.coords.latitude;
+      lon = position.coords.longitude;
+      const nearest = findNearestStopWithDistance(lat, lon);
+      if (!nearest) throw new Error("No nearby stop found for your location.");
+      userLocation = { lat, lon, nearestStopId: nearest.stop.id };
+      updateUserLocationMarker(lat, lon);
+    }
+
+    journeySelectedPlaces.start = null;
+    journeyStart = {
+      type: "gps",
+      label: "Your location",
+      lat,
+      lon,
+      stopId: userLocation.nearestStopId,
+      nearestStopId: userLocation.nearestStopId
+    };
+
+    if (journeyStartInput) journeyStartInput.value = "Your location";
+    clearJourneySuggestions("start");
+    renderJourneyOverlay();
+    highlightJourneyMarkers();
+
+    if (journeyEnd) showJourneyOptions();
+    else hideSelectionPanel();
+  } catch (error) {
+    console.warn("Could not use current location", error);
+    showJourneySearchStatus("Could not use your location", error?.message || "Check browser location permission and try again.");
+  }
 }
 
 async function resolveJourneyStartFromInput() {
@@ -3402,6 +3480,10 @@ function resetAppView(options = {}) {
 
   if (options.resetMap) {
     map.setView(perth, 11, { animate: true });
+    window.setTimeout(() => {
+      resetStopMarkerStyles();
+      updateNetworkLayer();
+    }, 260);
   }
 }
 
@@ -3967,8 +4049,9 @@ function refreshMapAfterInteraction() {
   }
 
   mapRefreshTimeoutId = window.setTimeout(() => {
-    if (selectedTripId || selectedStopId || journeyStart || journeyEnd) {
-      // Keep selected views responsive even after a zoom/pan.
+    if (selectedTripId || selectedStopId || journeyPickMode || latestJourneyOptions.length) {
+      // Keep active selected views responsive even after a zoom/pan. Stored From/To fields alone
+      // should not keep the map in journey mode after the user closes the route panel.
       updateBusPositionsLive();
       return;
     }
@@ -4095,6 +4178,14 @@ if (journeySwapButton) {
     event.preventDefault();
     event.stopPropagation();
     swapJourneyDirection();
+  });
+}
+
+if (journeyUseLocationInline) {
+  journeyUseLocationInline.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    useCurrentLocationAsJourneyStart();
   });
 }
 

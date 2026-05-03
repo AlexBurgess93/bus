@@ -2847,3 +2847,62 @@ html[data-map-theme="dark"] .journey-walk-time-marker span {
   background: rgba(248, 250, 252, 0.92);
   color: #0f172a;
 }
+
+/* Bugfix: destination planner no longer has a swap button. */
+.journey-overlay {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.journey-overlay-show {
+  grid-column: 2;
+}
+
+.journey-overlay-swap {
+  display: none !important;
+}
+
+.journey-start-input-row {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+
+.journey-use-location-inline {
+  display: inline;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #2563eb;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 950;
+  line-height: 1.15;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+  touch-action: manipulation;
+}
+
+.journey-overlay.has-start .journey-use-location-inline {
+  display: none;
+}
+
+.journey-field-input {
+  font-size: 16px;
+}
+
+.journey-overlay:not(.has-start) .journey-field-start .journey-field-input {
+  min-width: 92px;
+  font-size: 16px;
+  font-weight: 850;
+}
+
+html[data-map-theme="dark"] .journey-use-location-inline {
+  color: #93c5fd;
+}
+
+.journey-final-arrival-marker span {
+  background: #111827;
+}

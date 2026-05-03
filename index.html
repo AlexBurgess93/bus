@@ -36,7 +36,10 @@
         <span class="journey-field-dot journey-field-dot-start"></span>
         <span class="journey-field-text">
           <span class="journey-field-label">From</span>
-          <input id="journeyStartInput" class="journey-field-input" type="text" inputmode="search" autocomplete="off" placeholder="Use my location or enter start" />
+          <div class="journey-start-input-row">
+            <button id="journeyUseLocationInline" class="journey-use-location-inline" type="button">Use your location</button>
+            <input id="journeyStartInput" class="journey-field-input" type="text" inputmode="search" autocomplete="off" placeholder="or enter start" />
+          </div>
           <span id="journeyStartValue" class="journey-field-value is-hidden-text">Use your location</span>
           <div id="journeyStartSuggestions" class="journey-place-suggestions is-hidden" role="listbox" aria-label="Start location suggestions"></div>
         </span>
@@ -50,7 +53,6 @@
           <div id="journeyEndSuggestions" class="journey-place-suggestions is-hidden" role="listbox" aria-label="Destination suggestions"></div>
         </span>
       </label>
-      <button id="journeySwapButton" class="journey-overlay-swap" type="button" aria-label="Reverse start and destination"><img src="reverse_swap_path_icon.svg" alt="" aria-hidden="true" /></button>
       <button id="journeySearchButton" class="journey-overlay-show" type="button" aria-label="Show journey options">Show me</button>
     </section>
 
