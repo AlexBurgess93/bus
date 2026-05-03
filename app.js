@@ -47,6 +47,10 @@ let activeTripIdsGlobal = new Set();
 let serviceDayOffsetSeconds = 0;
 let simulatedCurrentSecondsOverride = null;
 let busUpdateTimerId = null;
+let isMapMoving = false;
+let mapRefreshTimeoutId = null;
+const VEHICLE_UPDATE_INTERVAL_MS = 3000;
+const MAP_SETTLE_REFRESH_DELAY_MS = 120;
 let hasWarnedAboutNoActiveTrips = false;
 let userLocationMarker = null;
 
@@ -1766,6 +1770,24 @@ function updateBusPositionsLive() {
   }
 }
 
+
+function refreshMapAfterInteraction() {
+  if (mapRefreshTimeoutId) {
+    window.clearTimeout(mapRefreshTimeoutId);
+  }
+
+  mapRefreshTimeoutId = window.setTimeout(() => {
+    if (selectedTripId || selectedStopId) {
+      // Keep selected views responsive even after a zoom/pan.
+      updateBusPositionsLive();
+      return;
+    }
+
+    applyDefaultStopMarkerStylesForZoom();
+    updateBusPositionsLive();
+  }, MAP_SETTLE_REFRESH_DELAY_MS);
+}
+
 function setBetaTrackingMode(mode) {
   betaTrackingMode = mode;
 
@@ -1815,18 +1837,13 @@ if (locateUserButton) {
   }, { passive: true });
 }
 
-map.on("zoomend", () => {
-  // Only restyle all stops when there is no active selection.
-  // Selected stop/bus views deliberately override the default zoom styling.
-  if (!selectedTripId && !selectedStopId) {
-    applyDefaultStopMarkerStylesForZoom();
-  }
-
-  updateBusPositionsLive();
+map.on("movestart zoomstart", () => {
+  isMapMoving = true;
 });
 
-map.on("moveend", () => {
-  updateBusPositionsLive();
+map.on("moveend zoomend", () => {
+  isMapMoving = false;
+  refreshMapAfterInteraction();
 });
 
 map.on("click", () => {
@@ -1863,8 +1880,10 @@ async function init() {
   updateNetworkLayer();
 
   busUpdateTimerId = window.setInterval(() => {
-    updateBusPositionsLive();
-  }, 1000);
+    if (!isMapMoving) {
+      updateBusPositionsLive();
+    }
+  }, VEHICLE_UPDATE_INTERVAL_MS);
 }
 
 init().catch(err => console.error(err));
