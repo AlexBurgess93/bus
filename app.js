@@ -86,6 +86,8 @@ let journeyStart = null;
 let journeyEnd = null;
 let journeyPickMode = null;
 let journeyRouteLines = [];
+let selectedJourneyOptionTripId = null;
+let latestJourneyOptions = [];
 let stopMapActionStopId = null;
 
 const trackingModeButtons = document.querySelectorAll(".tracking-mode-button");
@@ -1055,6 +1057,13 @@ function applyStopHitAreaStylesForZoom() {
 }
 
 function selectStop(stop) {
+  if ((journeyStart || journeyEnd) && !journeyPickMode) {
+    selectedStopId = stop.id;
+    showStopMapAction(stop);
+    highlightJourneyMarkers();
+    return;
+  }
+
   if (journeyPickMode === "start" || journeyPickMode === "end") {
     selectedStopId = stop.id;
     showStopMapAction(stop);
@@ -1564,22 +1573,8 @@ function setJourneyEndFromStop(stop) {
 }
 
 function renderJourneyPrompt(title, message, mode) {
-  const destinationName = journeyEnd ? stopLookup[journeyEnd.stopId]?.name : null;
-  const startName = journeyStart ? stopLookup[getJourneyStartStopId()]?.name : null;
-
   selectionPanelContent.innerHTML = `
     <section class="panel-section journey-panel-section">
-      <div class="journey-plan-summary">
-        <div class="journey-plan-row ${startName ? "is-set" : "is-missing"}">
-          <span class="journey-plan-label">Start</span>
-          <span class="journey-plan-value">${escapeHTML(startName || "Not set")}</span>
-        </div>
-        <div class="journey-plan-row ${destinationName ? "is-set" : "is-missing"}">
-          <span class="journey-plan-label">End</span>
-          <span class="journey-plan-value">${escapeHTML(destinationName || "Not set")}</span>
-        </div>
-      </div>
-
       <div class="journey-prompt-card">
         <div class="panel-title">${escapeHTML(title)}</div>
         <div class="panel-subtitle">${escapeHTML(message)}</div>
@@ -1648,6 +1643,8 @@ function clearJourneyPlan() {
   journeyStart = null;
   journeyEnd = null;
   journeyPickMode = null;
+  selectedJourneyOptionTripId = null;
+  latestJourneyOptions = [];
   clearJourneyRouteLines();
   hideStopMapAction();
   renderJourneyOverlay();
@@ -1683,9 +1680,13 @@ function findDirectJourneyOptions(originStopId, destinationStopId) {
       transportMode: getTransportMode(routeItem),
       headsign: trip.headsign || routeItem.headsign || "",
       shapeId: trip.shapeId,
+      originIndex,
+      destinationIndex,
       departureTime: originStopTime.departureTime || originStopTime.arrivalTime,
       arrivalTime: destinationStopTime.arrivalTime || destinationStopTime.departureTime,
-      departureSeconds: Number.isNaN(departureSeconds) ? Infinity : departureSeconds
+      departureSeconds: Number.isNaN(departureSeconds) ? Infinity : departureSeconds,
+      delaySeconds: getStableLiveDelaySeconds(trip.tripId),
+      delayStatus: getDelayStatus(getStableLiveDelaySeconds(trip.tripId))
     });
   });
 
@@ -1704,32 +1705,126 @@ function findDirectJourneyOptions(originStopId, destinationStopId) {
   return deduped.slice(0, 8);
 }
 
-function drawJourneyOptionPaths(options) {
+function getShapeSegmentBetweenStops(shapeCoords, startStop, endStop) {
+  if (!shapeCoords?.length || !startStop || !endStop) return [];
+
+  let startIndex = findClosestShapeIndex(shapeCoords, startStop);
+  let endIndex = findClosestShapeIndex(shapeCoords, endStop);
+
+  if (startIndex === endIndex) {
+    return [[startStop.lat, startStop.lon], [endStop.lat, endStop.lon]];
+  }
+
+  if (endIndex < startIndex) {
+    const temp = startIndex;
+    startIndex = endIndex;
+    endIndex = temp;
+  }
+
+  const segment = shapeCoords.slice(startIndex, endIndex + 1);
+  segment[0] = [startStop.lat, startStop.lon];
+  segment[segment.length - 1] = [endStop.lat, endStop.lon];
+  return segment;
+}
+
+function getShapeSegmentToStop(shapeCoords, fromPoint, endStop) {
+  if (!shapeCoords?.length || !fromPoint || !endStop) return [];
+
+  const fromIndex = findClosestShapeIndex(shapeCoords, { lat: fromPoint[0], lon: fromPoint[1] });
+  const endIndex = findClosestShapeIndex(shapeCoords, endStop);
+
+  if (fromIndex === endIndex) return [fromPoint, [endStop.lat, endStop.lon]];
+  if (fromIndex < endIndex) return [fromPoint, ...shapeCoords.slice(fromIndex + 1, endIndex + 1), [endStop.lat, endStop.lon]];
+  return [fromPoint, ...shapeCoords.slice(endIndex, fromIndex).reverse(), [endStop.lat, endStop.lon]];
+}
+
+function getJourneyDelayColour(option) {
+  const className = option?.delayStatus?.className || getDelayStatus(option?.delaySeconds || 0).className;
+  if (className === "ahead") return "#2563eb";
+  if (className === "behind" || className === "very-late") return "#f59e0b";
+  return "#16a34a";
+}
+
+function drawSelectedJourneyOption(option) {
   clearJourneyRouteLines();
   clearStopRouteLines();
   clearRouteLine();
   clearNetworkLayer();
 
-  const shapeIds = [...new Set(options.map(option => option.shapeId).filter(Boolean))];
+  if (!option) return;
 
-  shapeIds.forEach((shapeId, index) => {
-    const shapeCoords = allShapes[shapeId];
-    if (!shapeCoords) return;
+  const shapeCoords = allShapes[option.shapeId];
+  const startStop = stopLookup[getJourneyStartStopId()];
+  const endStop = stopLookup[journeyEnd?.stopId];
+  const colour = getJourneyDelayColour(option);
 
-    const line = L.polyline(shapeCoords, {
+  if (!shapeCoords || !startStop || !endStop) return;
+
+  const journeySegment = getShapeSegmentBetweenStops(shapeCoords, startStop, endStop);
+
+  if (journeySegment.length >= 2) {
+    const journeyLine = L.polyline(journeySegment, {
       renderer: routeFlowRenderer,
-      color: index === 0 ? "#7c3aed" : "#0ea5e9",
-      weight: index === 0 ? 6 : 4,
-      opacity: index === 0 ? 0.86 : 0.52,
-      dashArray: "10 18",
+      color: colour,
+      weight: 7,
+      opacity: 0.92,
       lineCap: "round",
       lineJoin: "round",
-      className: "journey-route-flow-line"
+      className: "journey-selected-solid-line"
     }).addTo(map);
 
-    line.bringToBack();
-    journeyRouteLines.push(line);
-  });
+    journeyLine.bringToBack();
+    journeyRouteLines.push(journeyLine);
+  }
+
+  const livePosition = latestLiveTripPositionsByTripId[option.tripId] || latestTripPositionsByTripId[option.tripId];
+  const busPoint = livePosition?.position || livePosition?.latLng || livePosition?.coords || null;
+  const busLatLng = Array.isArray(busPoint)
+    ? busPoint
+    : livePosition?.lat && livePosition?.lon
+      ? [livePosition.lat, livePosition.lon]
+      : null;
+
+  if (busLatLng) {
+    const approachSegment = getShapeSegmentToStop(shapeCoords, busLatLng, startStop);
+
+    if (approachSegment.length >= 2) {
+      const approachLine = L.polyline(approachSegment, {
+        renderer: routeFlowRenderer,
+        color: colour,
+        weight: 5,
+        opacity: 0.68,
+        dashArray: "6 14",
+        lineCap: "round",
+        lineJoin: "round",
+        className: "journey-approach-flow-line"
+      }).addTo(map);
+
+      approachLine.bringToBack();
+      journeyRouteLines.push(approachLine);
+    }
+  }
+}
+
+function drawJourneyOptionPaths(options) {
+  selectedJourneyOptionTripId = options[0]?.tripId || null;
+  latestJourneyOptions = options;
+  drawSelectedJourneyOption(options[0]);
+}
+
+function selectJourneyOption(tripId) {
+  const option = latestJourneyOptions.find(item => item.tripId === tripId);
+  if (!option) return;
+
+  selectedJourneyOptionTripId = tripId;
+  highlightedTripIds = new Set([tripId]);
+  selectedTripId = null;
+  selectedStopId = null;
+
+  drawSelectedJourneyOption(option);
+  highlightJourneyMarkers();
+  renderJourneyResultsPanel(latestJourneyOptions);
+  fitJourneyBounds([option]);
 }
 
 function highlightJourneyMarkers() {
@@ -1781,32 +1876,35 @@ function highlightJourneyMarkers() {
 }
 
 function renderJourneyResultsPanel(options) {
-  const startStop = stopLookup[getJourneyStartStopId()];
-  const endStop = stopLookup[journeyEnd?.stopId];
   const optionHTML = options.length
-    ? options.map((option, index) => `
-        <button class="journey-option-pill" type="button" data-trip-id="${escapeHTML(option.tripId)}" data-shape-id="${escapeHTML(option.shapeId)}">
-          <span class="journey-option-route ${escapeHTML(`arrival-route-${option.transportMode}`)}">${escapeHTML(option.routeLabel)}</span>
-          <span class="journey-option-main">${escapeHTML(option.headsign || "Direct service")}</span>
-          <span class="journey-option-time">${escapeHTML(formatScheduledClockTime(option.departureTime))} → ${escapeHTML(formatScheduledClockTime(option.arrivalTime))}</span>
-          ${index === 0 ? `<span class="journey-option-badge">First option</span>` : ""}
-        </button>
-      `).join("")
+    ? options.map((option, index) => {
+        const isSelected = (selectedJourneyOptionTripId || options[0]?.tripId) === option.tripId;
+        const status = option.delayStatus || getDelayStatus(option.delaySeconds || 0);
+        return `
+          <button class="journey-option-pill ${isSelected ? "is-selected" : ""} ${escapeHTML(status.className)}" type="button" data-trip-id="${escapeHTML(option.tripId)}">
+            <span class="journey-option-route ${escapeHTML(`arrival-route-${option.transportMode}`)}">${escapeHTML(option.routeLabel)}</span>
+            <span class="journey-option-main">${escapeHTML(option.headsign || "Direct service")}</span>
+            <span class="journey-option-time">${escapeHTML(formatScheduledClockTime(option.departureTime))} → ${escapeHTML(formatScheduledClockTime(option.arrivalTime))}</span>
+            <span class="journey-option-badge">${index === 0 ? "Soonest" : escapeHTML(status.text)}</span>
+          </button>
+        `;
+      }).join("")
     : `<div class="arrival-empty">No direct route found. Transfers are the next planning layer.</div>`;
 
   selectionPanelContent.innerHTML = `
     <section class="panel-section journey-panel-section">
       <div class="journey-result-header">
         <div class="panel-title">${options.length ? "Direct options" : "No direct option yet"}</div>
-        <div class="panel-subtitle">${options.length ? "Tap an option to inspect that service." : "Start and end are set. Next step later is one-transfer routing."}</div>
+        <div class="panel-subtitle">${options.length ? "Swipe options sideways. Tap one to preview that service without losing the list." : "Start and end are set. Next step later is one-transfer routing."}</div>
       </div>
 
-      <div class="journey-options-strip">
+      <div class="journey-options-strip" aria-label="Journey options">
         ${optionHTML}
       </div>
 
       <div class="journey-action-row">
         <button class="journey-action-button" type="button" data-journey-change-start>Change start</button>
+        <button class="journey-action-button" type="button" data-journey-change-end>Change destination</button>
         <button class="journey-action-button" type="button" data-journey-clear>Clear plan</button>
       </div>
     </section>
@@ -1816,16 +1914,12 @@ function renderJourneyResultsPanel(options) {
     button.addEventListener("click", event => {
       event.preventDefault();
       event.stopPropagation();
-      const tripId = button.getAttribute("data-trip-id");
-      const shapeId = button.getAttribute("data-shape-id");
-      drawTripShapeByShapeId(shapeId);
-      focusSingleTrip(tripId);
-      const trip = tripLookupByTripId[tripId];
-      if (trip) renderBusPanel(trip);
+      selectJourneyOption(button.getAttribute("data-trip-id"));
     });
   });
 
   const changeStartButton = selectionPanelContent.querySelector("[data-journey-change-start]");
+  const changeEndButton = selectionPanelContent.querySelector("[data-journey-change-end]");
   const clearButton = selectionPanelContent.querySelector("[data-journey-clear]");
 
   if (changeStartButton) {
@@ -1834,6 +1928,15 @@ function renderJourneyResultsPanel(options) {
       event.stopPropagation();
       setJourneyPickMode("start");
       renderJourneyPrompt("Choose a new start", "Tap a stop, then confirm it above the map.", "start");
+    });
+  }
+
+  if (changeEndButton) {
+    changeEndButton.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      setJourneyPickMode("end");
+      renderJourneyPrompt("Choose a new destination", "Tap a stop, then confirm it above the map.", "end");
     });
   }
 
@@ -1864,7 +1967,9 @@ function showJourneyOptions() {
   }
 
   const options = findDirectJourneyOptions(originStopId, destinationStopId);
-  highlightedTripIds = new Set(options.map(option => option.tripId));
+  latestJourneyOptions = options;
+  selectedJourneyOptionTripId = options[0]?.tripId || null;
+  highlightedTripIds = selectedJourneyOptionTripId ? new Set([selectedJourneyOptionTripId]) : new Set(options.map(option => option.tripId));
   selectedTripId = null;
   selectedStopId = null;
 

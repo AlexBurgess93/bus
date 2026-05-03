@@ -2075,6 +2075,28 @@ html[data-map-theme="dark"] .between-arrow-icon {
   text-align: left;
 }
 
+.journey-option-pill.is-selected {
+  border-color: #2563eb;
+  background: #eff6ff;
+  box-shadow: 0 8px 22px rgba(37, 99, 235, 0.16);
+}
+
+.journey-option-pill.on-time.is-selected {
+  border-color: #16a34a;
+  background: #ecfdf5;
+}
+
+.journey-option-pill.ahead.is-selected {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.journey-option-pill.behind.is-selected,
+.journey-option-pill.very-late.is-selected {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
 .journey-option-route {
   grid-area: route;
   min-width: 34px;
@@ -2115,10 +2137,15 @@ html[data-map-theme="dark"] .between-arrow-icon {
   font-weight: 900;
 }
 
-.journey-route-flow-line {
+.journey-route-flow-line,
+.journey-selected-solid-line,
+.journey-approach-flow-line {
   stroke-linecap: round;
   stroke-linejoin: round;
-  animation: route-flow-forward 2.1s linear infinite;
+}
+
+.journey-approach-flow-line {
+  animation: route-flow-forward 1.65s linear infinite;
 }
 
 html[data-map-theme="dark"] .journey-action-button {
@@ -2139,6 +2166,20 @@ html[data-map-theme="dark"] .journey-result-header,
 html[data-map-theme="dark"] .journey-option-pill {
   background: rgba(39, 39, 42, 0.94);
   border-color: rgba(82, 82, 91, 0.9);
+}
+
+html[data-map-theme="dark"] .journey-option-pill.is-selected {
+  border-color: rgba(96, 165, 250, 0.95);
+  background: rgba(30, 41, 59, 0.98);
+}
+
+html[data-map-theme="dark"] .journey-option-pill.on-time.is-selected {
+  border-color: rgba(34, 197, 94, 0.9);
+}
+
+html[data-map-theme="dark"] .journey-option-pill.behind.is-selected,
+html[data-map-theme="dark"] .journey-option-pill.very-late.is-selected {
+  border-color: rgba(245, 158, 11, 0.95);
 }
 
 html[data-map-theme="dark"] .journey-plan-value,
