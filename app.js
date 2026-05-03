@@ -35,7 +35,6 @@ const STOP_DOTS_MIN_ZOOM = 15;
 const DETAILED_MARKER_MIN_ZOOM = 14;
 const SERVICE_DOTS_MIN_ZOOM = 10;
 const NETWORK_LAYER_MAX_ZOOM = 14;
-const TIME_TRAVEL_MAX_MINUTES = 120;
 
 let currentRouteLine = null;
 let selectedTripId = null;
@@ -81,9 +80,6 @@ let pinnedViewEnabled = false;
 let activeMapPinMarker = null;
 let tripLookupByTripId = {};
 let etaMarkers = [];
-let timeTravelActive = false;
-let timeTravelBaseSeconds = null;
-let timeTravelOffsetMinutes = 0;
 
 const trackingModeButtons = document.querySelectorAll(".tracking-mode-button");
 
@@ -100,10 +96,6 @@ const LIVE_NOTICE_SEEN_KEY = "tripTrackerLiveNoticeSeen";
 const locateUserButton = document.getElementById("locateUserButton");
 const themeToggleButton = document.getElementById("themeToggleButton");
 const themeToggleIcon = document.getElementById("themeToggleIcon");
-const timeTravelButton = document.getElementById("timeTravelButton");
-const timeTravelPanel = document.getElementById("timeTravelPanel");
-const timeTravelSlider = document.getElementById("timeTravelSlider");
-const timeTravelLabel = document.getElementById("timeTravelLabel");
 
 
 
@@ -2440,92 +2432,6 @@ function refreshMapAfterInteraction() {
 }
 
 
-// ---------- Schedule preview / time scrubber ----------
-function formatTimeTravelLabel(offsetMinutes) {
-  if (!offsetMinutes) return "Now";
-  if (offsetMinutes < 60) return `+${offsetMinutes}m`;
-
-  const hours = Math.floor(offsetMinutes / 60);
-  const minutes = offsetMinutes % 60;
-
-  return minutes ? `+${hours}h ${minutes}m` : `+${hours}h`;
-}
-
-function refreshSelectedStopPanelIfNeeded() {
-  if (!selectedStopId) return;
-
-  const stop = stopLookup[selectedStopId];
-  if (!stop) return;
-
-  const upcoming = getUpcomingForStop(selectedStopId, 30);
-  highlightedTripIds = new Set(upcoming.map(item => item.tripId));
-  drawStopUpcomingPaths(upcoming);
-  highlightRelevantStopMarkers(selectedStopId, upcoming);
-  renderStopPanel(stop, upcoming);
-}
-
-function refreshCurrentMapState() {
-  updateBusPositionsLive();
-
-  if (selectedStopId) {
-    refreshSelectedStopPanelIfNeeded();
-  }
-
-  if (selectedTripId) {
-    drawEtaMarkersForTrip(selectedTripId);
-    drawGhostRouteSegmentForTrip(selectedTripId);
-  }
-}
-
-function setTimeTravelOffset(offsetMinutes) {
-  timeTravelOffsetMinutes = Math.max(0, Math.min(TIME_TRAVEL_MAX_MINUTES, Number(offsetMinutes) || 0));
-
-  if (timeTravelLabel) {
-    timeTravelLabel.textContent = formatTimeTravelLabel(timeTravelOffsetMinutes);
-  }
-
-  if (!timeTravelActive || timeTravelBaseSeconds === null) return;
-
-  simulatedCurrentSecondsOverride = timeTravelBaseSeconds + timeTravelOffsetMinutes * 60;
-  refreshCurrentMapState();
-}
-
-function setTimeTravelActive(isActive) {
-  timeTravelActive = Boolean(isActive);
-
-  if (timeTravelButton) {
-    timeTravelButton.classList.toggle("is-active", timeTravelActive);
-    timeTravelButton.setAttribute("aria-pressed", String(timeTravelActive));
-  }
-
-  if (timeTravelPanel) {
-    timeTravelPanel.classList.toggle("is-hidden", !timeTravelActive);
-  }
-
-  if (timeTravelActive) {
-    timeTravelBaseSeconds = getCurrentSecondsPrecise();
-    timeTravelOffsetMinutes = Number(timeTravelSlider?.value || 0);
-    setTrackingMode("scheduled");
-    setTimeTravelOffset(timeTravelOffsetMinutes);
-    return;
-  }
-
-  timeTravelBaseSeconds = null;
-  timeTravelOffsetMinutes = 0;
-  simulatedCurrentSecondsOverride = null;
-
-  if (timeTravelSlider) {
-    timeTravelSlider.value = "0";
-  }
-
-  if (timeTravelLabel) {
-    timeTravelLabel.textContent = "Now";
-  }
-
-  refreshCurrentMapState();
-}
-
-
 // ---------- Tracking mode controls and app events ----------
 function showLiveNoticeOnce() {
   if (!liveNoticeModal) return;
@@ -2606,43 +2512,6 @@ if (locateUserButton) {
   });
 
   locateUserButton.addEventListener("touchstart", event => {
-    event.stopPropagation();
-  }, { passive: true });
-}
-
-if (timeTravelButton) {
-  timeTravelButton.addEventListener("click", event => {
-    event.preventDefault();
-    event.stopPropagation();
-    setTimeTravelActive(!timeTravelActive);
-  });
-
-  timeTravelButton.addEventListener("touchstart", event => {
-    event.stopPropagation();
-  }, { passive: true });
-}
-
-if (timeTravelSlider) {
-  timeTravelSlider.addEventListener("input", event => {
-    event.stopPropagation();
-    setTimeTravelOffset(event.target.value);
-  });
-
-  timeTravelSlider.addEventListener("click", event => {
-    event.stopPropagation();
-  });
-
-  timeTravelSlider.addEventListener("touchstart", event => {
-    event.stopPropagation();
-  }, { passive: true });
-}
-
-if (timeTravelPanel) {
-  timeTravelPanel.addEventListener("click", event => {
-    event.stopPropagation();
-  });
-
-  timeTravelPanel.addEventListener("touchstart", event => {
     event.stopPropagation();
   }, { passive: true });
 }
