@@ -56,6 +56,65 @@ function readGTFSFile(filename) {
   return { headers, rows };
 }
 
+
+function rowsToObjects(headers, rows, keyMap = {}) {
+  return rows.map(cols => {
+    const obj = {};
+
+    headers.forEach((header, index) => {
+      const mappedKey = keyMap[header] || header;
+      obj[mappedKey] = cols[index];
+    });
+
+    return obj;
+  });
+}
+
+function convertCalendar() {
+  const keyMap = {
+    service_id: "serviceId",
+    start_date: "startDate",
+    end_date: "endDate"
+  };
+
+  try {
+    const { headers, rows } = readGTFSFile("calendar.txt");
+    const calendar = rowsToObjects(headers, rows, keyMap);
+
+    fs.writeFileSync(
+      path.join(processedDir, "calendar.json"),
+      JSON.stringify(calendar)
+    );
+
+    console.log(`Converted ${calendar.length} calendar services`);
+  } catch (error) {
+    fs.writeFileSync(path.join(processedDir, "calendar.json"), JSON.stringify([]));
+    console.warn("No calendar.txt found; wrote empty calendar.json");
+  }
+}
+
+function convertCalendarDates() {
+  const keyMap = {
+    service_id: "serviceId",
+    exception_type: "exceptionType"
+  };
+
+  try {
+    const { headers, rows } = readGTFSFile("calendar_dates.txt");
+    const calendarDates = rowsToObjects(headers, rows, keyMap);
+
+    fs.writeFileSync(
+      path.join(processedDir, "calendar-dates.json"),
+      JSON.stringify(calendarDates)
+    );
+
+    console.log(`Converted ${calendarDates.length} calendar date exceptions`);
+  } catch (error) {
+    fs.writeFileSync(path.join(processedDir, "calendar-dates.json"), JSON.stringify([]));
+    console.warn("No calendar_dates.txt found; wrote empty calendar-dates.json");
+  }
+}
+
 function convertStops() {
   const { headers, rows } = readGTFSFile("stops.txt");
 
@@ -348,6 +407,7 @@ function convertUpcomingStopTrips() {
 
       stopUpcoming[stopId].push({
         tripId: trip.tripId,
+        serviceId: trip.serviceId,
         routeShortName: trip.routeShortName,
         routeLongName: trip.routeLongName,
         headsign: trip.headsign,
@@ -378,6 +438,8 @@ function timeStringToSeconds(timeString) {
   return hours * 3600 + minutes * 60 + seconds;
 }
 
+convertCalendar();
+convertCalendarDates();
 convertStops();
 convertShapes();
 convertRoutes();

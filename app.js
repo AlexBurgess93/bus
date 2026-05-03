@@ -48,6 +48,7 @@ let unfilteredTimetableTrips = [];
 let stopUpcoming = {};
 let unfilteredStopUpcoming = {};
 let serviceCalendarRows = [];
+let serviceCalendarDateRows = [];
 let activeServiceIdsForToday = new Set();
 let stopLookup = {};
 let busMarkersByTripId = {};
@@ -99,7 +100,7 @@ const trackingModeButtons = document.querySelectorAll(".tracking-mode-button");
 
 // Set this to false if you only ever want true real-time behaviour.
 // When true, the prototype still shows buses if the current clock time has no active trips in the processed dataset.
-const KEEP_PROTOTYPE_VISIBLE_WHEN_NO_REAL_TIME_BUSES = true;
+const KEEP_PROTOTYPE_VISIBLE_WHEN_NO_REAL_TIME_BUSES = false;
 
 const selectionPanel = document.getElementById("selectionPanel");
 const selectionPanelContent = document.getElementById("selectionPanelContent");
@@ -2961,16 +2962,18 @@ function tripIsActiveAtSeconds(trip, currentSeconds) {
   return currentSeconds >= firstStopTime && currentSeconds <= lastStopTime;
 }
 
-function countActiveTripsAtSeconds(currentSeconds) {
+function countActiveTripsInListAtSeconds(trips, currentSeconds) {
   let count = 0;
 
-  timetableTrips.forEach(trip => {
-    if (tripIsActiveAtSeconds(trip, currentSeconds)) {
-      count += 1;
-    }
+  trips.forEach(trip => {
+    if (tripIsActiveAtSeconds(trip, currentSeconds)) count += 1;
   });
 
   return count;
+}
+
+function countActiveTripsAtSeconds(currentSeconds) {
+  return countActiveTripsInListAtSeconds(timetableTrips, currentSeconds);
 }
 
 function findNearestInServiceSecond(clockSeconds) {
@@ -3014,58 +3017,91 @@ function findNearestInServiceSecond(clockSeconds) {
 }
 
 function chooseServiceDayOffset() {
+  const now = new Date();
   const clockSeconds = getClockSecondsPrecise();
 
-  const candidates = [
-    { label: "device clock", offset: 0, seconds: clockSeconds },
-    { label: "GTFS after-midnight service day", offset: 86400, seconds: clockSeconds + 86400 },
-    { label: "previous service day", offset: -86400, seconds: clockSeconds - 86400 }
+  const candidateDefinitions = [
+    {
+      label: "current service day",
+      serviceDate: now,
+      offset: 0,
+      seconds: clockSeconds
+    },
+    {
+      label: "previous service day after midnight",
+      serviceDate: shiftDate(now, -1),
+      offset: 86400,
+      seconds: clockSeconds + 86400
+    },
+    {
+      label: "next service day before midnight",
+      serviceDate: shiftDate(now, 1),
+      offset: -86400,
+      seconds: clockSeconds - 86400
+    }
   ];
 
-  const scoredCandidates = candidates.map(candidate => ({
-    ...candidate,
-    activeTrips: countActiveTripsAtSeconds(candidate.seconds)
-  }));
+  const scoredCandidates = candidateDefinitions.map(candidate => {
+    const serviceResult = getTripsForServiceDate(candidate.serviceDate);
 
-  scoredCandidates.sort((a, b) => b.activeTrips - a.activeTrips);
+    return {
+      ...candidate,
+      serviceResult,
+      activeTrips: countActiveTripsInListAtSeconds(serviceResult.trips, candidate.seconds),
+      scheduledTrips: serviceResult.trips.length,
+      activeServiceIds: serviceResult.activeServiceIds.size
+    };
+  });
+
+  scoredCandidates.sort((a, b) => {
+    if (b.activeTrips !== a.activeTrips) return b.activeTrips - a.activeTrips;
+    return b.scheduledTrips - a.scheduledTrips;
+  });
 
   const bestCandidate = scoredCandidates[0];
-
   simulatedCurrentSecondsOverride = null;
+  serviceDayOffsetSeconds = 0;
 
-  if (bestCandidate && bestCandidate.activeTrips > 0) {
+  if (bestCandidate && bestCandidate.scheduledTrips > 0) {
+    activeServiceIdsForToday = bestCandidate.serviceResult.activeServiceIds;
+    timetableTrips = bestCandidate.serviceResult.trips;
+    stopUpcoming = bestCandidate.serviceResult.stopUpcoming;
     serviceDayOffsetSeconds = bestCandidate.offset;
+    rebuildTripLookup();
 
-    console.log("Using timetable time source:", bestCandidate.label);
-    console.log("Active trips:", bestCandidate.activeTrips);
-    console.log("Clock seconds:", Math.round(clockSeconds));
-    console.log("Service day offset seconds:", serviceDayOffsetSeconds);
+    console.log("Using timetable service day:", {
+      label: bestCandidate.label,
+      serviceDate: getLocalDateNumber(bestCandidate.serviceDate),
+      activeServiceIds: bestCandidate.activeServiceIds,
+      scheduledTrips: bestCandidate.scheduledTrips,
+      activeTripsNow: bestCandidate.activeTrips,
+      clockSeconds: Math.round(clockSeconds),
+      serviceDayOffsetSeconds
+    });
+
+    if (bestCandidate.activeTrips === 0) {
+      console.warn("Correct service day was selected, but no vehicle is currently mid-trip at the device time.");
+    }
+
     return;
   }
 
-  serviceDayOffsetSeconds = 0;
+  // Last-resort only: this means the feed calendar data is missing or does not line up
+  // with the trip service_ids. We keep this disabled for accuracy by default.
+  timetableTrips = [];
+  stopUpcoming = {};
+  rebuildTripLookup();
 
-  if (KEEP_PROTOTYPE_VISIBLE_WHEN_NO_REAL_TIME_BUSES) {
-    const nearestInServiceSecond = findNearestInServiceSecond(clockSeconds);
-
-    if (nearestInServiceSecond !== null) {
-      simulatedCurrentSecondsOverride = nearestInServiceSecond;
-
-      console.warn(
-        "No trips were active at the device clock time, so the prototype is showing the nearest in-service timetable moment instead.",
-        {
-          deviceClockSeconds: Math.round(clockSeconds),
-          simulatedTimetableSeconds: Math.round(simulatedCurrentSecondsOverride),
-          activeTripsAtSimulatedTime: countActiveTripsAtSeconds(simulatedCurrentSecondsOverride)
-        }
-      );
-      return;
-    }
-  }
-
-  console.warn(
-    "No active trips found for the device time, after-midnight time, previous service day, or nearest-service fallback."
-  );
+  console.warn("No valid GTFS service day matched this date/time. Check calendar.json, calendar-dates.json, and trip service IDs.", {
+    localDate: getLocalDateNumber(now),
+    candidates: scoredCandidates.map(candidate => ({
+      label: candidate.label,
+      serviceDate: getLocalDateNumber(candidate.serviceDate),
+      activeServiceIds: candidate.activeServiceIds,
+      scheduledTrips: candidate.scheduledTrips,
+      activeTrips: candidate.activeTrips
+    }))
+  });
 }
 
 function createStopLookup(stops) {
@@ -3733,68 +3769,151 @@ function getCalendarDayField(date = new Date()) {
   return dayFields[date.getDay()];
 }
 
+function getRowValue(row, camelKey, snakeKey = null) {
+  if (!row) return undefined;
+  if (row[camelKey] !== undefined) return row[camelKey];
+  if (snakeKey && row[snakeKey] !== undefined) return row[snakeKey];
+  return undefined;
+}
+
+function normaliseServiceId(value) {
+  return String(value ?? "").trim();
+}
+
+function calendarFlagIsActive(value) {
+  return value === true || value === "1" || value === 1;
+}
+
+function shiftDate(date, days) {
+  const shifted = new Date(date);
+  shifted.setDate(shifted.getDate() + days);
+  return shifted;
+}
+
 function getActiveServiceIdsForDate(date = new Date()) {
-  const todayNumber = getLocalDateNumber(date);
+  const dateNumber = getLocalDateNumber(date);
   const dayField = getCalendarDayField(date);
   const activeServiceIds = new Set();
 
   serviceCalendarRows.forEach(service => {
-    const startDate = Number(service.startDate);
-    const endDate = Number(service.endDate);
-    const runsToday = service[dayField] === true || service[dayField] === "1" || service[dayField] === 1;
+    const serviceId = normaliseServiceId(getRowValue(service, "serviceId", "service_id"));
+    if (!serviceId) return;
 
-    if (runsToday && todayNumber >= startDate && todayNumber <= endDate) {
-      activeServiceIds.add(String(service.serviceId));
+    const startDate = Number(getRowValue(service, "startDate", "start_date"));
+    const endDate = Number(getRowValue(service, "endDate", "end_date"));
+    const runsOnDay = calendarFlagIsActive(service[dayField]);
+
+    if (runsOnDay && dateNumber >= startDate && dateNumber <= endDate) {
+      activeServiceIds.add(serviceId);
     }
+  });
+
+  // GTFS calendar_dates.txt overrides the base calendar.
+  // exception_type 1 = add service for the date.
+  // exception_type 2 = remove service for the date.
+  serviceCalendarDateRows.forEach(exception => {
+    const exceptionDate = Number(getRowValue(exception, "date", "date"));
+    if (exceptionDate !== dateNumber) return;
+
+    const serviceId = normaliseServiceId(getRowValue(exception, "serviceId", "service_id"));
+    const exceptionType = Number(getRowValue(exception, "exceptionType", "exception_type"));
+    if (!serviceId) return;
+
+    if (exceptionType === 1) activeServiceIds.add(serviceId);
+    if (exceptionType === 2) activeServiceIds.delete(serviceId);
   });
 
   return activeServiceIds;
 }
 
-function filterStopUpcomingByServiceIds(stopUpcomingLookup, activeServiceIds) {
-  const filtered = {};
+function createStopUpcomingFromTrips(trips) {
+  const upcoming = {};
 
-  Object.keys(stopUpcomingLookup).forEach(stopId => {
-    const activeItems = stopUpcomingLookup[stopId].filter(item => {
-      return activeServiceIds.has(String(item.serviceId));
+  trips.forEach(trip => {
+    if (!trip?.stops?.length) return;
+
+    trip.stops.forEach(stopTime => {
+      const stopId = stopTime.stopId;
+      if (!stopId) return;
+
+      if (!upcoming[stopId]) upcoming[stopId] = [];
+
+      upcoming[stopId].push({
+        tripId: trip.tripId,
+        serviceId: trip.serviceId,
+        routeShortName: trip.routeShortName,
+        routeLongName: trip.routeLongName,
+        headsign: trip.headsign,
+        shapeId: trip.shapeId,
+        arrivalTime: stopTime.arrivalTime,
+        departureTime: stopTime.departureTime,
+        stopSequence: stopTime.sequence
+      });
     });
-
-    if (activeItems.length > 0) {
-      filtered[stopId] = activeItems;
-    }
   });
 
-  return filtered;
+  Object.keys(upcoming).forEach(stopId => {
+    upcoming[stopId].sort((a, b) => timeToSeconds(a.arrivalTime) - timeToSeconds(b.arrivalTime));
+  });
+
+  return upcoming;
+}
+
+function getTripsForServiceDate(date = new Date()) {
+  const activeServiceIds = getActiveServiceIdsForDate(date);
+
+  if (activeServiceIds.size === 0) {
+    return {
+      activeServiceIds,
+      trips: [],
+      stopUpcoming: {}
+    };
+  }
+
+  const trips = unfilteredTimetableTrips.filter(trip => activeServiceIds.has(normaliseServiceId(trip.serviceId)));
+
+  return {
+    activeServiceIds,
+    trips,
+    stopUpcoming: createStopUpcomingFromTrips(trips)
+  };
+}
+
+function setActiveTimetableForServiceDate(date = new Date(), reason = "date filter") {
+  const result = getTripsForServiceDate(date);
+
+  activeServiceIdsForToday = result.activeServiceIds;
+  timetableTrips = result.trips;
+  stopUpcoming = result.stopUpcoming;
+  rebuildTripLookup();
+
+  console.log("Service filter applied", {
+    reason,
+    serviceDate: getLocalDateNumber(date),
+    activeServiceIds: activeServiceIdsForToday.size,
+    unfilteredTrips: unfilteredTimetableTrips.length,
+    activeTrips: timetableTrips.length,
+    stopUpcomingRecords: Object.keys(stopUpcoming).length
+  });
 }
 
 function applyTodayServiceFilter() {
-  activeServiceIdsForToday = getActiveServiceIdsForDate(new Date());
-
-  if (activeServiceIdsForToday.size === 0) {
-    console.warn("No active service_ids found for today's local date. Falling back to all timetable trips.");
-    timetableTrips = unfilteredTimetableTrips;
-    stopUpcoming = unfilteredStopUpcoming;
-    rebuildTripLookup();
-    return;
-  }
-
-  timetableTrips = unfilteredTimetableTrips.filter(trip => {
-    return activeServiceIdsForToday.has(String(trip.serviceId));
-  });
-
-  stopUpcoming = filterStopUpcomingByServiceIds(unfilteredStopUpcoming, activeServiceIdsForToday);
-  rebuildTripLookup();
-
-  console.log("Date filter applied", {
-    localDate: getLocalDateNumber(new Date()),
-    activeServiceIds: activeServiceIdsForToday.size,
-    unfilteredTrips: unfilteredTimetableTrips.length,
-    activeTrips: timetableTrips.length
-  });
+  setActiveTimetableForServiceDate(new Date(), "initial load");
 }
 
 
 // ---------- Data loading ----------
+async function fetchOptionalJSON(url, fallbackValue) {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return fallbackValue;
+    return await response.json();
+  } catch (error) {
+    console.warn(`Optional data file not loaded: ${url}`, error);
+    return fallbackValue;
+  }
+}
+
 async function loadCoreData() {
   const [routesRes, tripsRes, shapesRes, timetableRes, stopUpcomingRes, calendarRes] = await Promise.all([
     fetch("data/processed/routes.json"),
@@ -3811,8 +3930,8 @@ async function loadCoreData() {
   unfilteredTimetableTrips = await timetableRes.json();
   unfilteredStopUpcoming = await stopUpcomingRes.json();
   serviceCalendarRows = await calendarRes.json();
+  serviceCalendarDateRows = await fetchOptionalJSON("data/processed/calendar-dates.json", []);
 
-  applyTodayServiceFilter();
   chooseServiceDayOffset();
 
   console.log("Core data loaded");
