@@ -503,6 +503,14 @@ function getTransportAriaLabel(item = {}) {
 function renderStopPanel(stop, upcomingItems) {
   selectedPanelType = "stop";
 
+  const routesForStop = getRoutesForStop(stop.id);
+  const routeStripHTML = routesForStop.length
+    ? routesForStop
+        .slice(0, 18)
+        .map(route => `<span class="stop-route-pill stop-route-${escapeHTML(route.mode)}">${escapeHTML(route.label)}</span>`)
+        .join("")
+    : `<span class="stop-route-empty">No active routes found for this stop today.</span>`;
+
   const upcomingHTML = upcomingItems.length
     ? upcomingItems.map(item => {
         const minsAway = formatMinutesAway(
@@ -510,40 +518,61 @@ function renderStopPanel(stop, upcomingItems) {
           getCurrentSecondsPrecise()
         );
 
+        const trip = tripLookupByTripId[item.tripId] || item;
+        const delayStatus = getDelayStatus(getStableLiveDelaySeconds(item.tripId));
+        const statusLabel = delayStatus.detail === "on time" ? "on time" : delayStatus.detail;
+
         return `
           <button
-            class="arrival-pill"
+            class="arrival-pill ${escapeHTML(delayStatus.className)}"
             type="button"
             data-shape-id="${escapeHTML(item.shapeId)}"
             data-trip-id="${escapeHTML(item.tripId)}"
-            aria-label="Select ${escapeHTML(getTransportAriaLabel(item))}, ${escapeHTML(minsAway)} away"
+            aria-label="Select ${escapeHTML(getTransportAriaLabel(item))}, ${escapeHTML(minsAway)} away, ${escapeHTML(statusLabel)}"
           >
-            <span class="arrival-route ${escapeHTML(`arrival-route-${getTransportMode(item)}`)}">${escapeHTML(getTransportLabel(item))}</span>
+            <span class="arrival-route ${escapeHTML(`arrival-route-${getTransportMode(trip)}`)}">${escapeHTML(getTransportLabel(trip))}</span>
             <span class="arrival-time">${escapeHTML(minsAway)}</span>
             <span class="arrival-destination">${escapeHTML(item.headsign)}</span>
           </button>
         `;
       }).join("")
-    : `<div class="arrival-empty">No MVP-route buses in the next 30 mins.</div>`;
+    : `<div class="arrival-empty">No active services in the next 30 mins.</div>`;
 
   selectionPanelContent.innerHTML = `
     <section class="panel-section stop-panel-section">
-      <div class="panel-main-row">
+      <div class="panel-main-row stop-panel-header">
         <div class="panel-text-stack">
           <div class="panel-title">${escapeHTML(stop.name)}</div>
           <div class="panel-subtitle">Stop ID: ${escapeHTML(stop.id)}</div>
         </div>
+
+        <button class="stop-routes-toggle" type="button" aria-expanded="false" aria-label="Show routes serving this stop">
+          ${escapeHTML(routesForStop.length)} routes
+        </button>
       </div>
 
-      <div class="stop-route-strip" aria-label="Routes serving this stop">
-        ${getRoutesForStop(stop.id).slice(0, 18).map(route => `<span class="stop-route-pill stop-route-${escapeHTML(route.mode)}">${escapeHTML(route.label)}</span>`).join("") || `<span class="stop-route-empty">No active routes found for this stop today.</span>`}
+      <div class="stop-route-strip is-collapsed" aria-label="Routes serving this stop">
+        ${routeStripHTML}
       </div>
 
-      <div class="arrival-strip" aria-label="Upcoming buses">
+      <div class="arrival-strip" aria-label="Upcoming services">
         ${upcomingHTML}
       </div>
     </section>
   `;
+
+  const routeToggle = selectionPanelContent.querySelector(".stop-routes-toggle");
+  const routeStrip = selectionPanelContent.querySelector(".stop-route-strip");
+
+  if (routeToggle && routeStrip) {
+    routeToggle.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const isCollapsed = routeStrip.classList.toggle("is-collapsed");
+      routeToggle.setAttribute("aria-expanded", String(!isCollapsed));
+    });
+  }
 
   selectionPanelContent.querySelectorAll(".arrival-pill").forEach(button => {
     const selectUpcomingTrip = event => {
