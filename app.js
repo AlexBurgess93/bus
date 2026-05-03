@@ -10,6 +10,11 @@ L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
   attribution: "&copy; OpenStreetMap contributors &copy; CARTO"
 }).addTo(map);
 
+const STOP_DOTS_MIN_ZOOM = 15;
+const DETAILED_MARKER_MIN_ZOOM = 14;
+const SERVICE_DOTS_MIN_ZOOM = 10;
+const NETWORK_LAYER_MAX_ZOOM = 14;
+
 const USEFUL_ROUTES = [
   "24", "32", "33", "39",
   "72", "73",
@@ -35,6 +40,7 @@ let stopLookup = {};
 let busMarkersByTripId = {};
 let stopMarkersByStopId = {};
 let stopRouteLines = [];
+let networkRouteLinesByShapeId = {};
 let latestTripPositionsByTripId = {};
 let selectedPanelType = null;
 let activeTripIdsGlobal = new Set();
@@ -138,6 +144,7 @@ function setTransportModeFilter(mode) {
   }
 
   updateBusPositionsLive();
+  updateNetworkLayer();
 }
 
 function getTransportMode(item = {}) {
@@ -172,14 +179,18 @@ function shouldRenderTripMarkers(trip, scheduledPosition, livePosition) {
 
   const zoom = map.getZoom();
 
-  // At city-wide zoom, keep the God-view lightweight: show the network,
-  // stops, and selected paths, but do not render every moving marker.
-  if (zoom < 12) return false;
+  // Wide-area views should still feel alive, but with very cheap tiny dots.
+  // Below this, the network layer carries the God-view instead of thousands of markers.
+  if (zoom < SERVICE_DOTS_MIN_ZOOM) return false;
 
   return (
     positionIsInsideExpandedViewport(scheduledPosition?.position) ||
     positionIsInsideExpandedViewport(livePosition?.position)
   );
+}
+
+function shouldUseCompactServiceMarker(isSelected = false) {
+  return !isSelected && map.getZoom() < DETAILED_MARKER_MIN_ZOOM;
 }
 
 function getTransportLabel(item = {}) {
@@ -496,31 +507,20 @@ function getFutureStopIdsForTrips(tripIds) {
 }
 
 function getDefaultStopStyleForZoom(zoom = map.getZoom()) {
-  // Stops should act like background texture when zoomed out,
-  // then become clearer and easier to tap as the user zooms in.
-  if (zoom <= 11) {
+  // Stop dots are high-detail infrastructure. Keep them hidden until the
+  // user is close enough to interact with individual stops.
+  if (zoom < STOP_DOTS_MIN_ZOOM) {
     return {
-      radius: 1.6,
+      radius: 0,
       color: "#94a3b8",
-      weight: 1,
+      weight: 0,
       fillColor: "#2563eb",
-      fillOpacity: 0.22,
-      opacity: 0.22
+      fillOpacity: 0,
+      opacity: 0
     };
   }
 
-  if (zoom <= 13) {
-    return {
-      radius: 2.6,
-      color: "#64748b",
-      weight: 1,
-      fillColor: "#2563eb",
-      fillOpacity: 0.42,
-      opacity: 0.45
-    };
-  }
-
-  if (zoom <= 15) {
+  if (zoom === STOP_DOTS_MIN_ZOOM) {
     return {
       radius: 3.6,
       color: "#64748b",
@@ -702,6 +702,102 @@ function highlightFutureStopMarkersForTrip(tripId) {
       fillOpacity: 0.08,
       opacity: 0.12
     });
+  });
+}
+
+function clearNetworkLayer() {
+  Object.keys(networkRouteLinesByShapeId).forEach(shapeId => {
+    map.removeLayer(networkRouteLinesByShapeId[shapeId]);
+  });
+
+  networkRouteLinesByShapeId = {};
+}
+
+function getNetworkLineStyleForTrip(trip) {
+  const mode = getTransportMode(trip);
+
+  if (mode === "train") {
+    return { color: "#7c3aed", weight: 3.5, opacity: 0.22 };
+  }
+
+  if (mode === "ferry") {
+    return { color: "#0284c7", weight: 3, opacity: 0.24, dashArray: "7 9" };
+  }
+
+  if (mode === "tram" || mode === "subway") {
+    return { color: "#0891b2", weight: 3, opacity: 0.22 };
+  }
+
+  return { color: "#334155", weight: 2.4, opacity: 0.16 };
+}
+
+function shapeTouchesExpandedViewport(shapeCoords) {
+  if (!shapeCoords || shapeCoords.length === 0) return false;
+
+  const bounds = map.getBounds().pad(0.18);
+  const step = Math.max(1, Math.floor(shapeCoords.length / 28));
+
+  for (let i = 0; i < shapeCoords.length; i += step) {
+    if (bounds.contains(L.latLng(shapeCoords[i][0], shapeCoords[i][1]))) {
+      return true;
+    }
+  }
+
+  const last = shapeCoords[shapeCoords.length - 1];
+  return bounds.contains(L.latLng(last[0], last[1]));
+}
+
+function updateNetworkLayer() {
+  const zoom = map.getZoom();
+
+  // The network layer is for wide/mid zoom. Once the user is close enough,
+  // detailed markers, stop dots, and selected route paths take over.
+  if (selectedTripId || selectedStopId || zoom > NETWORK_LAYER_MAX_ZOOM) {
+    clearNetworkLayer();
+    return;
+  }
+
+  const currentSeconds = getCurrentSecondsPrecise();
+  const desiredShapeIds = new Set();
+  const tripByShapeId = {};
+
+  timetableTrips.forEach(trip => {
+    if (!tripMatchesTransportFilter(trip)) return;
+    if (!tripIsActiveAtSeconds(trip, currentSeconds)) return;
+
+    const shapeCoords = allShapes[trip.shapeId];
+    if (!shapeCoords || !shapeTouchesExpandedViewport(shapeCoords)) return;
+
+    desiredShapeIds.add(trip.shapeId);
+    if (!tripByShapeId[trip.shapeId]) {
+      tripByShapeId[trip.shapeId] = trip;
+    }
+  });
+
+  Object.keys(networkRouteLinesByShapeId).forEach(shapeId => {
+    if (!desiredShapeIds.has(shapeId)) {
+      map.removeLayer(networkRouteLinesByShapeId[shapeId]);
+      delete networkRouteLinesByShapeId[shapeId];
+    }
+  });
+
+  desiredShapeIds.forEach(shapeId => {
+    if (networkRouteLinesByShapeId[shapeId]) return;
+
+    const shapeCoords = allShapes[shapeId];
+    const trip = tripByShapeId[shapeId];
+    const style = getNetworkLineStyleForTrip(trip);
+
+    const line = L.polyline(shapeCoords, {
+      ...style,
+      interactive: false,
+      lineCap: "round",
+      lineJoin: "round",
+      className: `network-route-line network-${getTransportMode(trip)}`
+    }).addTo(map);
+
+    line.bringToBack();
+    networkRouteLinesByShapeId[shapeId] = line;
   });
 }
 
@@ -962,6 +1058,25 @@ function createBusIcon(trip, isSelected = false, variant = "scheduled", delayCla
   const mode = getTransportMode(trip);
   const markerLabel = escapeHTML(getTransportLabel(trip));
   const ariaLabel = escapeHTML(getTransportAriaLabel(trip));
+  const compact = shouldUseCompactServiceMarker(isSelected);
+
+  if (compact) {
+    const dotClasses = [
+      "service-dot-marker",
+      `transport-${mode}`,
+      variant === "live" ? "live" : "scheduled"
+    ];
+
+    if (variant === "live") dotClasses.push(delayClass);
+
+    return L.divIcon({
+      className: "",
+      html: `<span class="${dotClasses.join(" ")}" aria-label="${variant} ${ariaLabel}"></span>`,
+      iconSize: variant === "live" ? [12, 12] : [9, 9],
+      iconAnchor: variant === "live" ? [6, 6] : [4.5, 4.5]
+    });
+  }
+
   const classes = [
     "route-bus-marker",
     `transport-${mode}`,
@@ -1045,6 +1160,7 @@ function clearRouteLine() {
 }
 
 function drawTripShapeByShapeId(shapeId) {
+  clearNetworkLayer();
   const shapeCoords = allShapes[shapeId];
 
   if (!shapeCoords) return;
@@ -1158,6 +1274,7 @@ function clearBusFocus() {
 function resetAppView() {
   clearBusFocus();
   hideSelectionPanel();
+  updateNetworkLayer();
 }
 
 function stopLeafletEvent(event) {
@@ -1476,6 +1593,7 @@ async function loadStops() {
       stopLeafletEvent(event);
 
       clearBusFocus();
+      clearNetworkLayer();
 
       const upcoming = getUpcomingForStop(stop.id, 30);
 
@@ -1554,8 +1672,12 @@ function updateBusPositionsLive() {
 
     visibleTripIds.add(trip.tripId);
 
+    const scheduledIsSelected = selectedTripId === trip.tripId && selectedBusVariant === "scheduled";
+
     if (busMarkersByTripId[trip.tripId]) {
-      busMarkersByTripId[trip.tripId].setLatLng(scheduledPosition.position);
+      busMarkersByTripId[trip.tripId]
+        .setLatLng(scheduledPosition.position)
+        .setIcon(createBusIcon(trip, scheduledIsSelected, "scheduled"));
     } else {
       const marker = L.marker(scheduledPosition.position, {
         icon: createBusIcon(trip, false, "scheduled"),
@@ -1575,8 +1697,12 @@ function updateBusPositionsLive() {
 
     const delayClass = getDelayStatus(delaySeconds).className;
 
+    const liveIsSelected = selectedTripId === trip.tripId && selectedBusVariant === "live";
+
     if (liveBusMarkersByTripId[trip.tripId]) {
-      liveBusMarkersByTripId[trip.tripId].setLatLng(livePosition.position);
+      liveBusMarkersByTripId[trip.tripId]
+        .setLatLng(livePosition.position)
+        .setIcon(createBusIcon(trip, liveIsSelected, "live", delayClass));
     } else {
       const marker = L.marker(livePosition.position, {
         icon: createBusIcon(trip, false, "live", delayClass),
@@ -1626,6 +1752,7 @@ function updateBusPositionsLive() {
   }
 
   activeTripIdsGlobal = activeTripIds;
+  updateNetworkLayer();
   applyBetaMarkerVisibility();
 
   if (activeTripIds.size > 0) {
@@ -1664,6 +1791,7 @@ function setBetaTrackingMode(mode) {
   } else {
     clearGhostRouteSegmentLine();
     applyBetaMarkerVisibility();
+    updateNetworkLayer();
   }
 }
 
@@ -1732,6 +1860,7 @@ async function init() {
   map.invalidateSize();
   updateBusPositionsLive();
   setBetaTrackingMode("live");
+  updateNetworkLayer();
 
   busUpdateTimerId = window.setInterval(() => {
     updateBusPositionsLive();

@@ -913,3 +913,71 @@ main {
     font-size: 12px;
   }
 }
+
+/* Multi-scale service dots: used at wide/mid zoom to keep iPhone panning smooth. */
+.service-dot-marker {
+  display: block;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #6b7280;
+  border: 1.5px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 1px 5px rgba(15, 23, 42, 0.28);
+  transform: translateZ(0);
+}
+
+.service-dot-marker.live {
+  width: 12px;
+  height: 12px;
+}
+
+.service-dot-marker.live.ahead {
+  background: #16a34a;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.16), 0 2px 7px rgba(22, 163, 74, 0.36);
+}
+
+.service-dot-marker.live.behind {
+  background: #f97316;
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.16), 0 2px 7px rgba(249, 115, 22, 0.38);
+}
+
+.service-dot-marker.live.on-time {
+  background: #6b7280;
+}
+
+.service-dot-marker.scheduled {
+  width: 8px;
+  height: 8px;
+  background: #9ca3af;
+  opacity: 0.78;
+}
+
+.service-dot-marker.transport-train {
+  background: #7c3aed;
+}
+
+.service-dot-marker.transport-ferry {
+  background: #0284c7;
+}
+
+.service-dot-marker.transport-tram,
+.service-dot-marker.transport-subway,
+.service-dot-marker.transport-transit {
+  background: #0891b2;
+}
+
+.service-dot-marker.transport-bus.live.ahead {
+  background: #16a34a;
+}
+
+.service-dot-marker.transport-bus.live.behind {
+  background: #f97316;
+}
+
+.service-dot-marker.transport-bus.live.on-time {
+  background: #6b7280;
+}
+
+.network-route-line {
+  pointer-events: none;
+}
