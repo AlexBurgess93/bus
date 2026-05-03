@@ -86,6 +86,7 @@ let journeyStart = null;
 let journeyEnd = null;
 let journeyPickMode = null;
 let journeyRouteLines = [];
+let journeyOverlayCollapseTimer = null;
 let selectedJourneyOptionTripId = null;
 let latestJourneyOptions = [];
 let stopMapActionStopId = null;
@@ -1415,6 +1416,44 @@ function getStopDisplayName(stopId, fallback = "Not set") {
   return stop?.name || fallback;
 }
 
+function cancelJourneyOverlayPeekTimer() {
+  if (journeyOverlayCollapseTimer) {
+    clearTimeout(journeyOverlayCollapseTimer);
+    journeyOverlayCollapseTimer = null;
+  }
+}
+
+function expandJourneyOverlay() {
+  if (!journeyOverlay) return;
+  journeyOverlay.classList.remove("is-peeking");
+}
+
+function scheduleJourneyOverlayPeek() {
+  if (!journeyOverlay) return;
+
+  cancelJourneyOverlayPeekTimer();
+
+  const startStopId = getJourneyStartStopId();
+  const endStopId = journeyEnd?.stopId || null;
+  const canPeek = Boolean(startStopId || endStopId) && !journeyPickMode && !journeyOverlay.classList.contains("is-hidden");
+
+  if (!canPeek) {
+    journeyOverlay.classList.remove("is-peeking");
+    return;
+  }
+
+  journeyOverlayCollapseTimer = setTimeout(() => {
+    if (!journeyPickMode && !journeyOverlay.classList.contains("is-hidden")) {
+      journeyOverlay.classList.add("is-peeking");
+    }
+  }, 5000);
+}
+
+function markJourneyOverlayTouched() {
+  expandJourneyOverlay();
+  scheduleJourneyOverlayPeek();
+}
+
 function renderJourneyOverlay() {
   if (!journeyOverlay) return;
 
@@ -1446,6 +1485,8 @@ function renderJourneyOverlay() {
 
   journeyStartEditButton?.classList.toggle("is-editing", journeyPickMode === "start");
   journeyEndEditButton?.classList.toggle("is-editing", journeyPickMode === "end");
+
+  scheduleJourneyOverlayPeek();
 }
 
 function hideStopMapAction() {
@@ -1892,20 +1933,9 @@ function renderJourneyResultsPanel(options) {
     : `<div class="arrival-empty">No direct route found. Transfers are the next planning layer.</div>`;
 
   selectionPanelContent.innerHTML = `
-    <section class="panel-section journey-panel-section">
-      <div class="journey-result-header">
-        <div class="panel-title">${options.length ? "Direct options" : "No direct option yet"}</div>
-        <div class="panel-subtitle">${options.length ? "Swipe options sideways. Tap one to preview that service without losing the list." : "Start and end are set. Next step later is one-transfer routing."}</div>
-      </div>
-
+    <section class="panel-section journey-panel-section journey-options-only-section">
       <div class="journey-options-strip" aria-label="Journey options">
         ${optionHTML}
-      </div>
-
-      <div class="journey-action-row">
-        <button class="journey-action-button" type="button" data-journey-change-start>Change start</button>
-        <button class="journey-action-button" type="button" data-journey-change-end>Change destination</button>
-        <button class="journey-action-button" type="button" data-journey-clear>Clear plan</button>
       </div>
     </section>
   `;
@@ -1918,36 +1948,6 @@ function renderJourneyResultsPanel(options) {
     });
   });
 
-  const changeStartButton = selectionPanelContent.querySelector("[data-journey-change-start]");
-  const changeEndButton = selectionPanelContent.querySelector("[data-journey-change-end]");
-  const clearButton = selectionPanelContent.querySelector("[data-journey-clear]");
-
-  if (changeStartButton) {
-    changeStartButton.addEventListener("click", event => {
-      event.preventDefault();
-      event.stopPropagation();
-      setJourneyPickMode("start");
-      renderJourneyPrompt("Choose a new start", "Tap a stop, then confirm it above the map.", "start");
-    });
-  }
-
-  if (changeEndButton) {
-    changeEndButton.addEventListener("click", event => {
-      event.preventDefault();
-      event.stopPropagation();
-      setJourneyPickMode("end");
-      renderJourneyPrompt("Choose a new destination", "Tap a stop, then confirm it above the map.", "end");
-    });
-  }
-
-  if (clearButton) {
-    clearButton.addEventListener("click", event => {
-      event.preventDefault();
-      event.stopPropagation();
-      clearJourneyPlan();
-      resetAppView();
-    });
-  }
 
   showSelectionPanel();
 }
@@ -3156,6 +3156,19 @@ if (themeToggleButton) {
   themeToggleButton.addEventListener("touchstart", event => {
     event.stopPropagation();
   }, { passive: true });
+}
+
+if (journeyOverlay) {
+  journeyOverlay.addEventListener("pointerdown", event => {
+    if (journeyOverlay.classList.contains("is-peeking")) {
+      event.preventDefault();
+      event.stopPropagation();
+      markJourneyOverlayTouched();
+      return;
+    }
+
+    markJourneyOverlayTouched();
+  }, true);
 }
 
 if (journeyClearButton) {
