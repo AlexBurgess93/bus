@@ -2275,11 +2275,15 @@ html[data-map-theme="dark"] .journey-stop-time-marker span {
 }
 
 /* Journey overlay: Uber-style from/to fields above the map base */
+:root {
+  --journey-map-edge-gap: 10px;
+}
+
 .journey-overlay {
   position: absolute;
-  left: 14px;
-  right: 14px;
-  bottom: calc(clamp(136px, 22vh, 190px) + 12px);
+  left: var(--journey-map-edge-gap);
+  right: var(--journey-map-edge-gap);
+  bottom: calc(clamp(136px, 22vh, 190px) + var(--journey-map-edge-gap));
   z-index: 760;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;

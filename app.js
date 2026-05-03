@@ -3382,19 +3382,27 @@ function clearBusFocus() {
   resetStopMarkerStyles();
 }
 
-function resetAppView() {
+function resetAppView(options = {}) {
   hideStopMapAction();
   clearBusFocus();
-  hideSelectionPanel();
 
-  if (journeyStart || journeyEnd) {
-    renderJourneyOverlay();
-    highlightJourneyMarkers();
-    return;
-  }
-
+  // Close any active journey preview/results without wiping the user's From/To fields.
+  // This lets the user return to the normal map, then tap Show me again to rebuild the route.
+  selectedJourneyOptionTripId = null;
+  latestJourneyOptions = [];
+  journeyPickMode = null;
   clearJourneyRouteLines();
+  highlightedTripIds = new Set();
+
+  hideSelectionPanel();
+  renderJourneyOverlay();
+  resetStopMarkerStyles();
+  updateBusPositionsLive();
   updateNetworkLayer();
+
+  if (options.resetMap) {
+    map.setView(perth, 11, { animate: true });
+  }
 }
 
 function stopLeafletEvent(event) {
@@ -4204,7 +4212,7 @@ map.on("click", () => {
 closeSelectionPanelButton.addEventListener("click", event => {
   event.preventDefault();
   event.stopPropagation();
-  resetAppView();
+  resetAppView({ resetMap: true });
 });
 
 closeSelectionPanelButton.addEventListener("touchstart", event => {
