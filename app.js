@@ -108,6 +108,19 @@ function applyMapTheme(theme) {
   localStorage.setItem(MAP_THEME_STORAGE_KEY, currentMapTheme);
   document.documentElement.dataset.mapTheme = currentMapTheme;
   updateThemeToggleButton();
+
+  if (currentRouteLine) {
+    currentRouteLine.setStyle({
+      color: getRoutePathColour(),
+      weight: getRoutePathWeight(),
+      opacity: getRoutePathOpacity()
+    });
+  }
+
+  // Force marker icons to rebuild once so dark/light specific styles stay consistent.
+  Object.values(busMarkersByTripId).forEach(marker => { marker._tripTrackerIconKey = null; });
+  Object.values(liveBusMarkersByTripId).forEach(marker => { marker._tripTrackerIconKey = null; });
+  updateBusPositionsLive();
 }
 
 function updateThemeToggleButton() {
@@ -719,11 +732,19 @@ function getDelayColour(delaySeconds) {
 }
 
 function getRoutePathColour() {
-  return trackingMode === "ghost" ? "#111827" : "#f59e0b";
+  if (trackingMode !== "ghost") return "#f59e0b";
+
+  // In Compare mode the whole selected path should become quiet context.
+  // The coloured difference segment and vehicle markers carry the attention.
+  return currentMapTheme === "dark" ? "#1f2937" : "#cbd5e1";
 }
 
 function getRoutePathOpacity() {
-  return trackingMode === "ghost" ? 0.78 : 0.92;
+  return trackingMode === "ghost" ? 0.34 : 0.92;
+}
+
+function getRoutePathWeight() {
+  return trackingMode === "ghost" ? 4 : 5;
 }
 
 function clearGhostRouteSegmentLine() {
@@ -1543,7 +1564,7 @@ function createBusIcon(trip, isSelected = false, variant = "scheduled", delayCla
     if (variant === "live") dotClasses.push(delayClass);
 
     return L.divIcon({
-      className: "",
+      className: "vehicle-marker-icon",
       html: `<span class="${dotClasses.join(" ")}" aria-label="${variant} ${ariaLabel}"></span>`,
       iconSize: variant === "live" ? [12, 12] : [9, 9],
       iconAnchor: variant === "live" ? [6, 6] : [4.5, 4.5]
@@ -1563,7 +1584,7 @@ function createBusIcon(trip, isSelected = false, variant = "scheduled", delayCla
   const iconAnchor = variant === "live" ? [24, 24] : [17, 17];
 
   return L.divIcon({
-    className: "",
+    className: "vehicle-marker-icon",
     html: `
       <div class="${classes.join(" ")}" aria-label="${variant} ${ariaLabel}">
         ${variant === "live" ? `<span class="route-bus-pulse"></span>` : ""}
@@ -1574,6 +1595,33 @@ function createBusIcon(trip, isSelected = false, variant = "scheduled", delayCla
     iconSize,
     iconAnchor
   });
+}
+
+function getServiceMarkerIconKey(trip, isSelected = false, variant = "scheduled", delayClass = "on-time") {
+  const compact = shouldUseCompactServiceMarker(isSelected);
+  const routeId = trip?.routeId || "unknown";
+  const tripRouteLabel = getTransportLabel(trip);
+
+  return [
+    routeId,
+    tripRouteLabel,
+    variant,
+    delayClass,
+    isSelected ? "selected" : "normal",
+    compact ? "compact" : "detailed",
+    currentMapTheme
+  ].join("|");
+}
+
+function setVehicleMarkerIcon(marker, trip, isSelected = false, variant = "scheduled", delayClass = "on-time") {
+  if (!marker) return;
+
+  const iconKey = getServiceMarkerIconKey(trip, isSelected, variant, delayClass);
+
+  if (marker._tripTrackerIconKey !== iconKey) {
+    marker.setIcon(createBusIcon(trip, isSelected, variant, delayClass));
+    marker._tripTrackerIconKey = iconKey;
+  }
 }
 
 function getScheduledMarkerOpacity(tripId) {
@@ -1633,7 +1681,7 @@ function drawTripShapeByShapeId(shapeId) {
 
   currentRouteLine = L.polyline(shapeCoords, {
     color: getRoutePathColour(),
-    weight: 5,
+    weight: getRoutePathWeight(),
     opacity: getRoutePathOpacity(),
     lineCap: "round",
     lineJoin: "round"
@@ -1734,7 +1782,7 @@ function focusSelectedBus(tripId, variant = selectedBusVariant) {
     const marker = busMarkersByTripId[id];
     const isSelected = id === selectedTripId && variant === "scheduled";
 
-    marker.setIcon(createBusIcon(tripLookupByTripId[id], isSelected, "scheduled"));
+    setVehicleMarkerIcon(marker, tripLookupByTripId[id], isSelected, "scheduled");
     marker.setZIndexOffset(isSelected ? 1200 : 500);
   });
 
@@ -1743,7 +1791,7 @@ function focusSelectedBus(tripId, variant = selectedBusVariant) {
     const delayClass = getDelayStatus(getStableLiveDelaySeconds(id)).className;
     const isSelected = id === selectedTripId && variant === "live";
 
-    marker.setIcon(createBusIcon(tripLookupByTripId[id], isSelected, "live", delayClass));
+    setVehicleMarkerIcon(marker, tripLookupByTripId[id], isSelected, "live", delayClass);
     marker.setZIndexOffset(isSelected ? 1300 : 700);
   });
 
@@ -1754,6 +1802,7 @@ function focusSelectedBus(tripId, variant = selectedBusVariant) {
   if (currentRouteLine) {
     currentRouteLine.setStyle({
       color: getRoutePathColour(),
+      weight: getRoutePathWeight(),
       opacity: getRoutePathOpacity()
     });
     currentRouteLine.bringToBack();
@@ -1767,14 +1816,14 @@ function focusTripsForStop(stopId, upcomingItems) {
 
   Object.keys(busMarkersByTripId).forEach(tripId => {
     const marker = busMarkersByTripId[tripId];
-    marker.setIcon(createBusIcon(tripLookupByTripId[tripId], highlightedTripIds.has(tripId), "scheduled"));
+    setVehicleMarkerIcon(marker, tripLookupByTripId[tripId], highlightedTripIds.has(tripId), "scheduled");
     marker.setZIndexOffset(highlightedTripIds.has(tripId) ? 1000 : 500);
   });
 
   Object.keys(liveBusMarkersByTripId).forEach(tripId => {
     const marker = liveBusMarkersByTripId[tripId];
     const delayClass = getDelayStatus(getStableLiveDelaySeconds(tripId)).className;
-    marker.setIcon(createBusIcon(tripLookupByTripId[tripId], highlightedTripIds.has(tripId), "live", delayClass));
+    setVehicleMarkerIcon(marker, tripLookupByTripId[tripId], highlightedTripIds.has(tripId), "live", delayClass);
     marker.setZIndexOffset(highlightedTripIds.has(tripId) ? 1100 : 700);
   });
 
@@ -1795,14 +1844,14 @@ function clearBusFocus() {
 
   Object.keys(busMarkersByTripId).forEach(id => {
     const marker = busMarkersByTripId[id];
-    marker.setIcon(createBusIcon(tripLookupByTripId[id], false, "scheduled"));
+    setVehicleMarkerIcon(marker, tripLookupByTripId[id], false, "scheduled");
     marker.setZIndexOffset(500);
   });
 
   Object.keys(liveBusMarkersByTripId).forEach(id => {
     const marker = liveBusMarkersByTripId[id];
     const delayClass = getDelayStatus(getStableLiveDelaySeconds(id)).className;
-    marker.setIcon(createBusIcon(tripLookupByTripId[id], false, "live", delayClass));
+    setVehicleMarkerIcon(marker, tripLookupByTripId[id], false, "live", delayClass);
     marker.setZIndexOffset(700);
   });
 
@@ -2239,14 +2288,15 @@ function updateBusPositionsLive() {
     const scheduledIsSelected = selectedTripId === trip.tripId && selectedBusVariant === "scheduled";
 
     if (busMarkersByTripId[trip.tripId]) {
-      busMarkersByTripId[trip.tripId]
-        .setLatLng(scheduledPosition.position)
-        .setIcon(createBusIcon(trip, scheduledIsSelected, "scheduled"));
+      const marker = busMarkersByTripId[trip.tripId];
+      marker.setLatLng(scheduledPosition.position);
+      setVehicleMarkerIcon(marker, trip, scheduledIsSelected, "scheduled");
     } else {
       const marker = L.marker(scheduledPosition.position, {
         icon: createBusIcon(trip, false, "scheduled"),
         zIndexOffset: 500
       }).addTo(map);
+      marker._tripTrackerIconKey = getServiceMarkerIconKey(trip, false, "scheduled");
 
       marker.on("click", event => {
         stopLeafletEvent(event);
@@ -2264,14 +2314,15 @@ function updateBusPositionsLive() {
     const liveIsSelected = selectedTripId === trip.tripId && selectedBusVariant === "live";
 
     if (liveBusMarkersByTripId[trip.tripId]) {
-      liveBusMarkersByTripId[trip.tripId]
-        .setLatLng(livePosition.position)
-        .setIcon(createBusIcon(trip, liveIsSelected, "live", delayClass));
+      const marker = liveBusMarkersByTripId[trip.tripId];
+      marker.setLatLng(livePosition.position);
+      setVehicleMarkerIcon(marker, trip, liveIsSelected, "live", delayClass);
     } else {
       const marker = L.marker(livePosition.position, {
         icon: createBusIcon(trip, false, "live", delayClass),
         zIndexOffset: 700
       }).addTo(map);
+      marker._tripTrackerIconKey = getServiceMarkerIconKey(trip, false, "live", delayClass);
 
       marker.on("click", event => {
         stopLeafletEvent(event);
@@ -2381,6 +2432,7 @@ function setTrackingMode(mode) {
   if (currentRouteLine) {
     currentRouteLine.setStyle({
       color: getRoutePathColour(),
+      weight: getRoutePathWeight(),
       opacity: getRoutePathOpacity()
     });
   }
@@ -2434,10 +2486,12 @@ if (locateUserButton) {
 
 map.on("movestart zoomstart", () => {
   isMapMoving = true;
+  document.body.classList.add("is-map-moving");
 });
 
 map.on("moveend zoomend", () => {
   isMapMoving = false;
+  document.body.classList.remove("is-map-moving");
   refreshMapAfterInteraction();
 });
 

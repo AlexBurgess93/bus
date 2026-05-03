@@ -720,14 +720,14 @@ main {
   height: 42px;
   border-radius: 999px;
   border: 3px solid currentColor;
-  opacity: 0.58;
-  animation: live-bus-pulse 1.7s ease-out infinite;
+  opacity: 0.42;
+  animation: live-bus-pulse 2.25s ease-out infinite;
 }
 
 .route-bus-marker.live.selected .route-bus-pulse {
   width: 48px;
   height: 48px;
-  opacity: 0.7;
+  opacity: 0.56;
 }
 
 .route-bus-scheduled-dot {
@@ -806,15 +806,15 @@ main {
 
 @keyframes live-bus-pulse {
   0% {
-    transform: scale(0.72);
-    opacity: 0.58;
+    transform: scale(0.78);
+    opacity: 0.46;
   }
-  72% {
-    transform: scale(1.45);
+  76% {
+    transform: scale(1.55);
     opacity: 0;
   }
   100% {
-    transform: scale(1.45);
+    transform: scale(1.55);
     opacity: 0;
   }
 }
@@ -1813,4 +1813,71 @@ body.is-dark-map .app-modal-card p {
 body.is-dark-map .app-modal-button {
   background: #f8fafc;
   color: #111827;
+}
+
+/* Interaction polish: smoother selected-service updates and softer UI entrances. */
+.vehicle-marker-icon {
+  transition: transform 2.75s linear;
+  will-change: transform;
+}
+
+body.is-map-moving .vehicle-marker-icon {
+  transition: none !important;
+}
+
+.route-bus-badge {
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.route-bus-marker.selected .route-bus-badge {
+  animation: selectedMarkerPop 220ms ease-out;
+}
+
+@keyframes selectedMarkerPop {
+  0% {
+    transform: scale(0.92);
+  }
+  100% {
+    transform: scale(1.08);
+  }
+}
+
+.selection-panel {
+  transition: background-color 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.selection-panel.has-selection .panel-section,
+.selection-panel.has-selection .panel-empty {
+  animation: panelContentIn 180ms ease-out;
+}
+
+@keyframes panelContentIn {
+  0% {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.eta-chip {
+  animation: etaChipIn 180ms ease-out both;
+}
+
+@keyframes etaChipIn {
+  0% {
+    opacity: 0;
+    transform: translateY(5px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
