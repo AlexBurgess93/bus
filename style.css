@@ -1139,3 +1139,47 @@ main {
     margin-left: 0;
   }
 }
+
+/* Floating map pin action: used for pinning the currently selected stop or service without crowding the bottom panel. */
+.map-pin-button {
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 999px;
+  background: #111827;
+  color: #ffffff;
+  font-size: 19px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.34);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.map-pin-button::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  width: 13px;
+  height: 13px;
+  background: #111827;
+  transform: translateX(-50%) rotate(45deg);
+  border-radius: 2px;
+}
+
+.map-pin-button:active {
+  transform: scale(0.96);
+}
+
+.context-filter-strip {
+  padding-bottom: 4px;
+}
+
+.transport-filter-button[data-transport-filter="pinned"].is-active {
+  border-color: #f97316;
+  background: #fff7ed;
+  color: #9a3412;
+  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.16);
+}

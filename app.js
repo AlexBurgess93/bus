@@ -64,6 +64,8 @@ const PIN_STORAGE_KEY = "transitPinnedNetworkV1";
 let pinnedRouteIds = new Set();
 let pinnedStopIds = new Set();
 let pinnedViewEnabled = false;
+let activeMapPinMarker = null;
+let tripLookupByTripId = {};
 
 const betaModeButtons = document.querySelectorAll(".beta-mode-button");
 
@@ -144,6 +146,14 @@ function savePinState() {
   }));
 }
 
+function rebuildTripLookup() {
+  tripLookupByTripId = {};
+
+  timetableTrips.forEach(trip => {
+    tripLookupByTripId[trip.tripId] = trip;
+  });
+}
+
 function getPinnedRouteIdsFromStops() {
   const routeIds = new Set();
 
@@ -151,7 +161,7 @@ function getPinnedRouteIdsFromStops() {
     const upcoming = stopUpcoming[stopId] || [];
 
     upcoming.forEach(item => {
-      const trip = timetableTrips.find(candidate => candidate.tripId === item.tripId);
+      const trip = tripLookupByTripId[item.tripId];
       if (trip) {
         routeIds.add(getTripRouteKey(trip));
       }
@@ -206,30 +216,23 @@ function setPinnedViewEnabled(enabled) {
 function togglePinnedRoute(trip) {
   const routeKey = getTripRouteKey(trip);
 
-  if (pinnedRouteIds.has(routeKey)) {
-    pinnedRouteIds.delete(routeKey);
-  } else {
+  if (!pinnedRouteIds.has(routeKey)) {
     pinnedRouteIds.add(routeKey);
   }
 
   savePinState();
-  renderBusPanel(trip, selectedBusVariant);
+  clearActiveMapPinMarker();
   updateBusPositionsLive();
   updateNetworkLayer();
 }
 
 function togglePinnedStop(stopId) {
-  if (pinnedStopIds.has(stopId)) {
-    pinnedStopIds.delete(stopId);
-  } else {
+  if (!pinnedStopIds.has(stopId)) {
     pinnedStopIds.add(stopId);
   }
 
   savePinState();
-  const stop = stopLookup[stopId];
-  if (stop) {
-    renderStopPanel(stop, getUpcomingForStop(stopId, 30));
-  }
+  clearActiveMapPinMarker();
   updateBusPositionsLive();
   updateNetworkLayer();
 }
@@ -250,7 +253,7 @@ function getRoutesForStop(stopId) {
   const upcoming = stopUpcoming[stopId] || [];
 
   upcoming.forEach(item => {
-    const trip = timetableTrips.find(candidate => candidate.tripId === item.tripId);
+    const trip = tripLookupByTripId[item.tripId];
     if (!trip) return;
 
     const key = getTripRouteKey(trip);
@@ -266,12 +269,73 @@ function getRoutesForStop(stopId) {
   return Array.from(routeMap.values()).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
 }
 
+function clearActiveMapPinMarker() {
+  if (activeMapPinMarker) {
+    map.removeLayer(activeMapPinMarker);
+    activeMapPinMarker = null;
+  }
+}
+
+function createMapPinIcon(label = "Pin") {
+  return L.divIcon({
+    className: "",
+    html: `
+      <button class="map-pin-button" type="button" aria-label="${escapeHTML(label)}">
+        📌
+      </button>
+    `,
+    iconSize: [42, 42],
+    iconAnchor: [21, 46]
+  });
+}
+
+function showMapPinForStop(stop) {
+  clearActiveMapPinMarker();
+
+  if (!stop || pinnedStopIds.has(stop.id)) return;
+
+  activeMapPinMarker = L.marker([stop.lat, stop.lon], {
+    icon: createMapPinIcon(`Pin stop ${stop.name}`),
+    zIndexOffset: 1800,
+    interactive: true
+  }).addTo(map);
+
+  activeMapPinMarker.on("click", event => {
+    stopLeafletEvent(event);
+    togglePinnedStop(stop.id);
+  });
+}
+
+function showMapPinForTrip(trip, variant = selectedBusVariant) {
+  clearActiveMapPinMarker();
+
+  if (!trip || pinnedRouteIds.has(getTripRouteKey(trip))) return;
+
+  const positionRecord = variant === "scheduled"
+    ? latestTripPositionsByTripId[trip.tripId]
+    : latestLiveTripPositionsByTripId[trip.tripId] || latestTripPositionsByTripId[trip.tripId];
+
+  if (!positionRecord?.position) return;
+
+  activeMapPinMarker = L.marker(positionRecord.position, {
+    icon: createMapPinIcon(`Pin ${getRouteDisplayNameForTrip(trip)}`),
+    zIndexOffset: 1800,
+    interactive: true
+  }).addTo(map);
+
+  activeMapPinMarker.on("click", event => {
+    stopLeafletEvent(event);
+    togglePinnedRoute(trip);
+  });
+}
+
 function renderDefaultContextPanel() {
   const filters = [
     { value: "all", label: "All" },
     { value: "bus", label: "Bus" },
     { value: "train", label: "Train" },
-    { value: "ferry", label: "Ferry" }
+    { value: "ferry", label: "Ferry" },
+    { value: "pinned", label: "📌 Pinned" }
   ];
 
   const filterHTML = filters.map(filter => `
@@ -287,67 +351,29 @@ function renderDefaultContextPanel() {
 
   const pinnedRouteLabels = getPinnedRouteLabels();
   const pinsSummary = hasAnyPins()
-    ? `${pinnedRouteLabels.length} route${pinnedRouteLabels.length === 1 ? "" : "s"} · ${pinnedStopIds.size} stop${pinnedStopIds.size === 1 ? "" : "s"}`
-    : "Pin a route or stop to build your network.";
-
-  const pinnedPreview = pinnedRouteLabels.length
-    ? `<div class="pinned-preview">${pinnedRouteLabels.slice(0, 8).map(label => `<span>${escapeHTML(label)}</span>`).join("")}</div>`
-    : "";
+    ? `${pinnedRouteLabels.length} pinned route${pinnedRouteLabels.length === 1 ? "" : "s"} from ${pinnedStopIds.size} stop pin${pinnedStopIds.size === 1 ? "" : "s"}`
+    : "Pin a stop or service from the map to build a personal network.";
 
   selectionPanelContent.innerHTML = `
     <section class="panel-section context-panel-section">
       <div class="context-panel-header">
         <div class="panel-text-stack">
           <div class="panel-title">Explore services</div>
-          <div class="panel-subtitle">Filter transport type, or switch to your pinned network.</div>
+          <div class="panel-subtitle">${escapeHTML(transportModeFilter === "pinned" ? `Pinned view active · ${pinsSummary}` : pinsSummary)}</div>
         </div>
       </div>
 
-      <div class="context-control-row">
-        <div class="transport-filter-strip" role="group" aria-label="Filter transport mode">
-          ${filterHTML}
-        </div>
-
-        <button
-          class="pinned-view-button ${pinnedViewEnabled ? "is-active" : ""}"
-          type="button"
-          data-pinned-view-toggle="true"
-          aria-pressed="${pinnedViewEnabled ? "true" : "false"}"
-        >
-          📌 Pinned
-        </button>
+      <div class="transport-filter-strip context-filter-strip" role="group" aria-label="Filter map view">
+        ${filterHTML}
       </div>
-
-      <div class="pinned-status-row">
-        <span>${escapeHTML(pinnedViewEnabled ? `Pinned view active · ${pinsSummary}` : pinsSummary)}</span>
-        ${hasAnyPins() ? `<button class="pinned-reset-button" type="button" data-reset-pins="true">Reset pins</button>` : ""}
-      </div>
-      ${pinnedPreview}
     </section>
   `;
 
   bindTransportFilterButtons();
-  bindPinContextButtons();
 }
 
 function bindPinContextButtons() {
-  const toggle = selectionPanelContent.querySelector("[data-pinned-view-toggle]");
-  if (toggle) {
-    toggle.addEventListener("click", event => {
-      event.preventDefault();
-      event.stopPropagation();
-      setPinnedViewEnabled(!pinnedViewEnabled);
-    });
-  }
-
-  const reset = selectionPanelContent.querySelector("[data-reset-pins]");
-  if (reset) {
-    reset.addEventListener("click", event => {
-      event.preventDefault();
-      event.stopPropagation();
-      resetPins();
-    });
-  }
+  // Pin controls now live on the map, not inside the bottom context panel.
 }
 
 function bindTransportFilterButtons() {
@@ -361,7 +387,11 @@ function bindTransportFilterButtons() {
 }
 
 function setTransportModeFilter(mode) {
-  transportModeFilter = ["all", "bus", "train", "ferry"].includes(mode) ? mode : "all";
+  const nextMode = ["all", "bus", "train", "ferry", "pinned"].includes(mode) ? mode : "all";
+
+  transportModeFilter = nextMode;
+  pinnedViewEnabled = nextMode === "pinned";
+  savePinState();
 
   if (!selectedTripId && !selectedStopId) {
     renderDefaultContextPanel();
@@ -388,7 +418,7 @@ function getTransportMode(item = {}) {
 }
 
 function tripMatchesTransportFilter(trip = {}) {
-  if (transportModeFilter === "all") return true;
+  if (transportModeFilter === "all" || transportModeFilter === "pinned") return true;
   return getTransportMode(trip) === transportModeFilter;
 }
 
@@ -471,20 +501,11 @@ function renderStopPanel(stop, upcomingItems) {
 
   selectionPanelContent.innerHTML = `
     <section class="panel-section stop-panel-section">
-      <div class="panel-main-row panel-main-row-with-action">
+      <div class="panel-main-row">
         <div class="panel-text-stack">
           <div class="panel-title">${escapeHTML(stop.name)}</div>
           <div class="panel-subtitle">Stop ID: ${escapeHTML(stop.id)}</div>
         </div>
-
-        <button
-          class="pin-action-button ${pinnedStopIds.has(stop.id) ? "is-pinned" : ""}"
-          type="button"
-          data-pin-stop-id="${escapeHTML(stop.id)}"
-          aria-pressed="${pinnedStopIds.has(stop.id) ? "true" : "false"}"
-        >
-          ${pinnedStopIds.has(stop.id) ? "Pinned" : "Pin stop"}
-        </button>
       </div>
 
       <div class="stop-route-strip" aria-label="Routes serving this stop">
@@ -504,7 +525,7 @@ function renderStopPanel(stop, upcomingItems) {
 
       const shapeId = button.getAttribute("data-shape-id");
       const tripId = button.getAttribute("data-trip-id");
-      const trip = timetableTrips.find(item => item.tripId === tripId);
+      const trip = tripLookupByTripId[tripId];
 
       drawTripShapeByShapeId(shapeId);
       focusSingleTrip(tripId);
@@ -517,15 +538,7 @@ function renderStopPanel(stop, upcomingItems) {
     button.addEventListener("click", selectUpcomingTrip);
   });
 
-  const pinStopButton = selectionPanelContent.querySelector("[data-pin-stop-id]");
-  if (pinStopButton) {
-    pinStopButton.addEventListener("click", event => {
-      event.preventDefault();
-      event.stopPropagation();
-      togglePinnedStop(pinStopButton.dataset.pinStopId);
-    });
-  }
-
+  showMapPinForStop(stop);
   showSelectionPanel();
 }
 
@@ -630,7 +643,7 @@ function drawGhostRouteSegmentForTrip(tripId) {
 
   if (betaTrackingMode !== "ghost" || !tripId) return;
 
-  const trip = timetableTrips.find(item => item.tripId === tripId);
+  const trip = tripLookupByTripId[tripId];
   if (!trip) return;
 
   const scheduledPosition = latestTripPositionsByTripId[tripId];
@@ -696,15 +709,6 @@ function renderBusPanel(trip, variant = selectedBusVariant) {
           <span class="delay-value">${escapeHTML(delayStatus.text)}</span>
           <span class="delay-detail">${escapeHTML(delayStatus.detail)}</span>
         </div>
-
-        <button
-          class="pin-action-button ${pinnedRouteIds.has(getTripRouteKey(trip)) ? "is-pinned" : ""}"
-          type="button"
-          data-pin-route-id="${escapeHTML(getTripRouteKey(trip))}"
-          aria-pressed="${pinnedRouteIds.has(getTripRouteKey(trip)) ? "true" : "false"}"
-        >
-          ${pinnedRouteIds.has(getTripRouteKey(trip)) ? "Pinned" : "Pin route"}
-        </button>
       </div>
 
       <div class="between-card">
@@ -714,15 +718,7 @@ function renderBusPanel(trip, variant = selectedBusVariant) {
     </section>
   `;
 
-  const pinRouteButton = selectionPanelContent.querySelector("[data-pin-route-id]");
-  if (pinRouteButton) {
-    pinRouteButton.addEventListener("click", event => {
-      event.preventDefault();
-      event.stopPropagation();
-      togglePinnedRoute(trip);
-    });
-  }
-
+  showMapPinForTrip(trip, variant);
   showSelectionPanel();
 }
 
@@ -879,7 +875,7 @@ function highlightRelevantStopMarkers(selectedStopId, upcomingItems) {
 }
 
 function getFutureStopDetailsForTrip(tripId) {
-  const trip = timetableTrips.find(item => item.tripId === tripId);
+  const trip = tripLookupByTripId[tripId];
 
   if (!trip || !trip.stops || trip.stops.length === 0) {
     return {
@@ -1473,7 +1469,7 @@ function focusSelectedBus(tripId, variant = selectedBusVariant) {
     const marker = busMarkersByTripId[id];
     const isSelected = id === selectedTripId && variant === "scheduled";
 
-    marker.setIcon(createBusIcon(timetableTrips.find(trip => trip.tripId === id), isSelected, "scheduled"));
+    marker.setIcon(createBusIcon(tripLookupByTripId[id], isSelected, "scheduled"));
     marker.setZIndexOffset(isSelected ? 1200 : 500);
   });
 
@@ -1482,7 +1478,7 @@ function focusSelectedBus(tripId, variant = selectedBusVariant) {
     const delayClass = getDelayStatus(getStableLiveDelaySeconds(id)).className;
     const isSelected = id === selectedTripId && variant === "live";
 
-    marker.setIcon(createBusIcon(timetableTrips.find(trip => trip.tripId === id), isSelected, "live", delayClass));
+    marker.setIcon(createBusIcon(tripLookupByTripId[id], isSelected, "live", delayClass));
     marker.setZIndexOffset(isSelected ? 1300 : 700);
   });
 
@@ -1505,14 +1501,14 @@ function focusTripsForStop(stopId, upcomingItems) {
 
   Object.keys(busMarkersByTripId).forEach(tripId => {
     const marker = busMarkersByTripId[tripId];
-    marker.setIcon(createBusIcon(timetableTrips.find(trip => trip.tripId === tripId), highlightedTripIds.has(tripId), "scheduled"));
+    marker.setIcon(createBusIcon(tripLookupByTripId[tripId], highlightedTripIds.has(tripId), "scheduled"));
     marker.setZIndexOffset(highlightedTripIds.has(tripId) ? 1000 : 500);
   });
 
   Object.keys(liveBusMarkersByTripId).forEach(tripId => {
     const marker = liveBusMarkersByTripId[tripId];
     const delayClass = getDelayStatus(getStableLiveDelaySeconds(tripId)).className;
-    marker.setIcon(createBusIcon(timetableTrips.find(trip => trip.tripId === tripId), highlightedTripIds.has(tripId), "live", delayClass));
+    marker.setIcon(createBusIcon(tripLookupByTripId[tripId], highlightedTripIds.has(tripId), "live", delayClass));
     marker.setZIndexOffset(highlightedTripIds.has(tripId) ? 1100 : 700);
   });
 
@@ -1525,6 +1521,7 @@ function focusSingleTrip(tripId) {
 }
 
 function clearBusFocus() {
+  clearActiveMapPinMarker();
   selectedTripId = null;
   selectedStopId = null;
   selectedBusVariant = betaTrackingMode === "scheduled" ? "scheduled" : "live";
@@ -1532,14 +1529,14 @@ function clearBusFocus() {
 
   Object.keys(busMarkersByTripId).forEach(id => {
     const marker = busMarkersByTripId[id];
-    marker.setIcon(createBusIcon(timetableTrips.find(trip => trip.tripId === id), false, "scheduled"));
+    marker.setIcon(createBusIcon(tripLookupByTripId[id], false, "scheduled"));
     marker.setZIndexOffset(500);
   });
 
   Object.keys(liveBusMarkersByTripId).forEach(id => {
     const marker = liveBusMarkersByTripId[id];
     const delayClass = getDelayStatus(getStableLiveDelaySeconds(id)).className;
-    marker.setIcon(createBusIcon(timetableTrips.find(trip => trip.tripId === id), false, "live", delayClass));
+    marker.setIcon(createBusIcon(tripLookupByTripId[id], false, "live", delayClass));
     marker.setZIndexOffset(700);
   });
 
@@ -1798,6 +1795,7 @@ function applyTodayServiceFilter() {
     console.warn("No active service_ids found for today's local date. Falling back to all timetable trips.");
     timetableTrips = unfilteredTimetableTrips;
     stopUpcoming = unfilteredStopUpcoming;
+    rebuildTripLookup();
     return;
   }
 
@@ -1806,6 +1804,7 @@ function applyTodayServiceFilter() {
   });
 
   stopUpcoming = filterStopUpcomingByServiceIds(unfilteredStopUpcoming, activeServiceIdsForToday);
+  rebuildTripLookup();
 
   console.log("Date filter applied", {
     localDate: getLocalDateNumber(new Date()),
