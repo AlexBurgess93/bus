@@ -1481,3 +1481,36 @@ html[data-map-theme="dark"] .arrival-empty {
     right: 10px;
   }
 }
+
+
+/* Refinement: tracking mode control now uses only tabs, no title. */
+.beta-mode-title {
+  display: none !important;
+}
+
+.beta-mode-control {
+  gap: 0 !important;
+  padding: 10px !important;
+}
+
+.beta-segmented-control {
+  align-items: center;
+}
+
+html[data-map-theme="dark"] .theme-toggle-button.is-active img {
+  filter: none;
+}
+
+@media (max-width: 640px) {
+  .beta-mode-control {
+    padding: 8px !important;
+  }
+
+  .locate-button {
+    top: calc(env(safe-area-inset-top, 0px) + 82px) !important;
+  }
+
+  .theme-toggle-button {
+    top: calc(env(safe-area-inset-top, 0px) + 138px) !important;
+  }
+}
