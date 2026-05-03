@@ -81,6 +81,12 @@ let activeMapPinMarker = null;
 let tripLookupByTripId = {};
 let etaMarkers = [];
 
+let userLocation = null;
+let journeyStart = null;
+let journeyEnd = null;
+let journeyPickMode = null;
+let journeyRouteLines = [];
+
 const trackingModeButtons = document.querySelectorAll(".tracking-mode-button");
 
 // Set this to false if you only ever want true real-time behaviour.
@@ -631,6 +637,11 @@ function renderStopPanel(stop, upcomingItems) {
         ${routeStripHTML}
       </div>
 
+      <div class="journey-action-row" aria-label="Journey planning actions">
+        <button class="journey-action-button journey-start-button" type="button">Set as start</button>
+        <button class="journey-action-button journey-destination-button" type="button">Set as destination</button>
+      </div>
+
       <div class="arrival-strip" aria-label="Upcoming services">
         ${upcomingHTML}
       </div>
@@ -647,6 +658,25 @@ function renderStopPanel(stop, upcomingItems) {
 
       const isCollapsed = routeStrip.classList.toggle("is-collapsed");
       routeToggle.setAttribute("aria-expanded", String(!isCollapsed));
+    });
+  }
+
+  const startButton = selectionPanelContent.querySelector(".journey-start-button");
+  const destinationButton = selectionPanelContent.querySelector(".journey-destination-button");
+
+  if (startButton) {
+    startButton.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      setJourneyStartFromStop(stop);
+    });
+  }
+
+  if (destinationButton) {
+    destinationButton.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      setJourneyEndFromStop(stop);
     });
   }
 
@@ -1037,6 +1067,12 @@ function applyStopHitAreaStylesForZoom() {
 }
 
 function selectStop(stop) {
+  if (journeyPickMode === "start") {
+    setJourneyStartFromStop(stop);
+    return;
+  }
+
+  clearJourneyRouteLines();
   clearBusFocus();
   clearNetworkLayer();
 
@@ -1358,6 +1394,336 @@ function drawStopUpcomingPaths(upcomingItems) {
 
     stopRouteLines.push(line);
   });
+}
+
+
+// ---------- Journey planning ----------
+function clearJourneyRouteLines() {
+  journeyRouteLines.forEach(line => {
+    map.removeLayer(line);
+  });
+
+  journeyRouteLines = [];
+}
+
+function getJourneyStartStopId() {
+  if (!journeyStart) return null;
+  return journeyStart.type === "gps" ? journeyStart.nearestStopId : journeyStart.stopId;
+}
+
+function setJourneyStartFromStop(stop) {
+  journeyStart = {
+    type: "stop",
+    stopId: stop.id
+  };
+  journeyPickMode = null;
+
+  if (journeyEnd) {
+    showJourneyOptions();
+    return;
+  }
+
+  renderJourneyPrompt("Start set", "Now tap a destination stop.", "end");
+}
+
+function setJourneyEndFromStop(stop) {
+  journeyEnd = {
+    type: "stop",
+    stopId: stop.id
+  };
+
+  if (userLocation?.nearestStopId) {
+    journeyStart = {
+      type: "gps",
+      lat: userLocation.lat,
+      lon: userLocation.lon,
+      nearestStopId: userLocation.nearestStopId
+    };
+    journeyPickMode = null;
+    showJourneyOptions();
+    return;
+  }
+
+  journeyPickMode = "start";
+  renderJourneyPrompt("Destination set", `Tap your starting stop, or use your location.`, "start");
+  highlightJourneyMarkers();
+}
+
+function renderJourneyPrompt(title, message, mode) {
+  const destinationName = journeyEnd ? stopLookup[journeyEnd.stopId]?.name : null;
+  const startName = journeyStart ? stopLookup[getJourneyStartStopId()]?.name : null;
+
+  selectionPanelContent.innerHTML = `
+    <section class="panel-section journey-panel-section">
+      <div class="journey-plan-summary">
+        <div class="journey-plan-row ${startName ? "is-set" : "is-missing"}">
+          <span class="journey-plan-label">Start</span>
+          <span class="journey-plan-value">${escapeHTML(startName || "Not set")}</span>
+        </div>
+        <div class="journey-plan-row ${destinationName ? "is-set" : "is-missing"}">
+          <span class="journey-plan-label">End</span>
+          <span class="journey-plan-value">${escapeHTML(destinationName || "Not set")}</span>
+        </div>
+      </div>
+
+      <div class="journey-prompt-card">
+        <div class="panel-title">${escapeHTML(title)}</div>
+        <div class="panel-subtitle">${escapeHTML(message)}</div>
+      </div>
+
+      <div class="journey-action-row">
+        <button class="journey-action-button journey-primary-button" type="button" data-journey-use-location>Use my location</button>
+        <button class="journey-action-button" type="button" data-journey-clear>Clear plan</button>
+      </div>
+    </section>
+  `;
+
+  const useLocationButton = selectionPanelContent.querySelector("[data-journey-use-location]");
+  const clearButton = selectionPanelContent.querySelector("[data-journey-clear]");
+
+  if (useLocationButton) {
+    useLocationButton.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      requestUserLocation({ useAsJourneyStart: true });
+    });
+  }
+
+  if (clearButton) {
+    clearButton.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      clearJourneyPlan();
+      resetAppView();
+    });
+  }
+
+  showSelectionPanel();
+}
+
+function clearJourneyPlan() {
+  journeyStart = null;
+  journeyEnd = null;
+  journeyPickMode = null;
+  clearJourneyRouteLines();
+}
+
+function findDirectJourneyOptions(originStopId, destinationStopId) {
+  if (!originStopId || !destinationStopId || originStopId === destinationStopId) return [];
+
+  const currentSeconds = getCurrentSecondsPrecise();
+  const upcomingByTripId = new Map((stopUpcoming[originStopId] || []).map(item => [item.tripId, item]));
+  const candidates = [];
+
+  timetableTrips.forEach(trip => {
+    if (!trip?.stops?.length) return;
+
+    const originIndex = trip.stops.findIndex(stopTime => stopTime.stopId === originStopId);
+    const destinationIndex = trip.stops.findIndex(stopTime => stopTime.stopId === destinationStopId);
+
+    if (originIndex === -1 || destinationIndex === -1 || originIndex >= destinationIndex) return;
+
+    const originStopTime = trip.stops[originIndex];
+    const destinationStopTime = trip.stops[destinationIndex];
+    const departureSeconds = timeToSeconds(originStopTime.departureTime || originStopTime.arrivalTime);
+
+    if (!Number.isNaN(departureSeconds) && departureSeconds < currentSeconds - 120) return;
+
+    const routeItem = upcomingByTripId.get(trip.tripId) || trip;
+
+    candidates.push({
+      trip,
+      tripId: trip.tripId,
+      routeLabel: getTransportLabel(routeItem),
+      transportMode: getTransportMode(routeItem),
+      headsign: trip.headsign || routeItem.headsign || "",
+      shapeId: trip.shapeId,
+      departureTime: originStopTime.departureTime || originStopTime.arrivalTime,
+      arrivalTime: destinationStopTime.arrivalTime || destinationStopTime.departureTime,
+      departureSeconds: Number.isNaN(departureSeconds) ? Infinity : departureSeconds
+    });
+  });
+
+  const deduped = [];
+  const seenKeys = new Set();
+
+  candidates
+    .sort((a, b) => a.departureSeconds - b.departureSeconds)
+    .forEach(candidate => {
+      const key = `${candidate.routeLabel}|${candidate.headsign}|${candidate.shapeId}`;
+      if (seenKeys.has(key)) return;
+      seenKeys.add(key);
+      deduped.push(candidate);
+    });
+
+  return deduped.slice(0, 8);
+}
+
+function drawJourneyOptionPaths(options) {
+  clearJourneyRouteLines();
+  clearStopRouteLines();
+  clearRouteLine();
+  clearNetworkLayer();
+
+  const shapeIds = [...new Set(options.map(option => option.shapeId).filter(Boolean))];
+
+  shapeIds.forEach((shapeId, index) => {
+    const shapeCoords = allShapes[shapeId];
+    if (!shapeCoords) return;
+
+    const line = L.polyline(shapeCoords, {
+      renderer: routeFlowRenderer,
+      color: index === 0 ? "#7c3aed" : "#0ea5e9",
+      weight: index === 0 ? 6 : 4,
+      opacity: index === 0 ? 0.86 : 0.52,
+      dashArray: "10 18",
+      lineCap: "round",
+      lineJoin: "round",
+      className: "journey-route-flow-line"
+    }).addTo(map);
+
+    line.bringToBack();
+    journeyRouteLines.push(line);
+  });
+}
+
+function highlightJourneyMarkers() {
+  const startStopId = getJourneyStartStopId();
+  const endStopId = journeyEnd?.stopId || null;
+
+  applyDefaultStopMarkerStylesForZoom();
+
+  Object.keys(stopMarkersByStopId).forEach(stopId => {
+    const marker = stopMarkersByStopId[stopId];
+
+    if (stopId === startStopId) {
+      marker.setStyle({
+        radius: 9,
+        color: "#047857",
+        weight: 3,
+        fillColor: "#10b981",
+        fillOpacity: 1,
+        opacity: 1
+      });
+      marker.bringToFront();
+    }
+
+    if (stopId === endStopId) {
+      marker.setStyle({
+        radius: 9,
+        color: "#6d28d9",
+        weight: 3,
+        fillColor: "#8b5cf6",
+        fillOpacity: 1,
+        opacity: 1
+      });
+      marker.bringToFront();
+    }
+  });
+}
+
+function renderJourneyResultsPanel(options) {
+  const startStop = stopLookup[getJourneyStartStopId()];
+  const endStop = stopLookup[journeyEnd?.stopId];
+  const optionHTML = options.length
+    ? options.map((option, index) => `
+        <button class="journey-option-pill" type="button" data-trip-id="${escapeHTML(option.tripId)}" data-shape-id="${escapeHTML(option.shapeId)}">
+          <span class="journey-option-route ${escapeHTML(`arrival-route-${option.transportMode}`)}">${escapeHTML(option.routeLabel)}</span>
+          <span class="journey-option-main">${escapeHTML(option.headsign || "Direct service")}</span>
+          <span class="journey-option-time">${escapeHTML(formatScheduledClockTime(option.departureTime))} → ${escapeHTML(formatScheduledClockTime(option.arrivalTime))}</span>
+          ${index === 0 ? `<span class="journey-option-badge">First option</span>` : ""}
+        </button>
+      `).join("")
+    : `<div class="arrival-empty">No direct route found. Transfers are the next planning layer.</div>`;
+
+  selectionPanelContent.innerHTML = `
+    <section class="panel-section journey-panel-section">
+      <div class="journey-plan-summary">
+        <div class="journey-plan-row is-set">
+          <span class="journey-plan-label">Start</span>
+          <span class="journey-plan-value">${escapeHTML(startStop?.name || "Nearest stop")}</span>
+        </div>
+        <div class="journey-plan-row is-set">
+          <span class="journey-plan-label">End</span>
+          <span class="journey-plan-value">${escapeHTML(endStop?.name || "Destination")}</span>
+        </div>
+      </div>
+
+      <div class="journey-result-header">
+        <div class="panel-title">${options.length ? "Direct options" : "No direct option yet"}</div>
+        <div class="panel-subtitle">${options.length ? "Tap an option to inspect that service." : "Start and end are set. Next step later is one-transfer routing."}</div>
+      </div>
+
+      <div class="journey-options-strip">
+        ${optionHTML}
+      </div>
+
+      <div class="journey-action-row">
+        <button class="journey-action-button" type="button" data-journey-change-start>Change start</button>
+        <button class="journey-action-button" type="button" data-journey-clear>Clear plan</button>
+      </div>
+    </section>
+  `;
+
+  selectionPanelContent.querySelectorAll(".journey-option-pill").forEach(button => {
+    button.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const tripId = button.getAttribute("data-trip-id");
+      const shapeId = button.getAttribute("data-shape-id");
+      drawTripShapeByShapeId(shapeId);
+      focusSingleTrip(tripId);
+      const trip = tripLookupByTripId[tripId];
+      if (trip) renderBusPanel(trip);
+    });
+  });
+
+  const changeStartButton = selectionPanelContent.querySelector("[data-journey-change-start]");
+  const clearButton = selectionPanelContent.querySelector("[data-journey-clear]");
+
+  if (changeStartButton) {
+    changeStartButton.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      journeyPickMode = "start";
+      renderJourneyPrompt("Choose a new start", "Tap the stop you want to leave from.", "start");
+    });
+  }
+
+  if (clearButton) {
+    clearButton.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      clearJourneyPlan();
+      resetAppView();
+    });
+  }
+
+  showSelectionPanel();
+}
+
+function showJourneyOptions() {
+  const originStopId = getJourneyStartStopId();
+  const destinationStopId = journeyEnd?.stopId || null;
+
+  if (!originStopId || !destinationStopId) {
+    renderJourneyPrompt("Complete your plan", "Set both a start and destination to see options.", originStopId ? "end" : "start");
+    return;
+  }
+
+  if (originStopId === destinationStopId) {
+    renderJourneyPrompt("Start and end match", "Choose a different start stop so the app can find a journey.", "start");
+    return;
+  }
+
+  const options = findDirectJourneyOptions(originStopId, destinationStopId);
+  highlightedTripIds = new Set(options.map(option => option.tripId));
+  selectedTripId = null;
+  selectedStopId = null;
+
+  drawJourneyOptionPaths(options);
+  highlightJourneyMarkers();
+  renderJourneyResultsPanel(options);
 }
 
 
@@ -1905,6 +2271,7 @@ function clearBusFocus() {
 }
 
 function resetAppView() {
+  clearJourneyPlan();
   clearBusFocus();
   hideSelectionPanel();
   updateNetworkLayer();
@@ -2056,7 +2423,7 @@ function updateUserLocationMarker(lat, lon) {
   }).addTo(map);
 }
 
-function requestUserLocation() {
+function requestUserLocation(options = {}) {
   if (!navigator.geolocation) {
     showLocationMessage("Location unavailable", "This browser does not support GPS location.");
     return;
@@ -2069,7 +2436,27 @@ function requestUserLocation() {
       const lat = position.coords.latitude;
       const lon = position.coords.longitude;
 
+      const nearestStop = findNearestStop(lat, lon);
+      userLocation = {
+        lat,
+        lon,
+        nearestStopId: nearestStop?.id || null
+      };
+
       updateUserLocationMarker(lat, lon);
+
+      if (options.useAsJourneyStart && nearestStop) {
+        journeyStart = {
+          type: "gps",
+          lat,
+          lon,
+          nearestStopId: nearestStop.id
+        };
+        journeyPickMode = null;
+        showJourneyOptions();
+        return;
+      }
+
       focusUserLocation(lat, lon);
     },
     error => {
@@ -2419,7 +2806,7 @@ function refreshMapAfterInteraction() {
   }
 
   mapRefreshTimeoutId = window.setTimeout(() => {
-    if (selectedTripId || selectedStopId) {
+    if (selectedTripId || selectedStopId || journeyStart || journeyEnd) {
       // Keep selected views responsive even after a zoom/pan.
       updateBusPositionsLive();
       return;

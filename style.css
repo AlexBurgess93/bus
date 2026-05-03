@@ -1934,3 +1934,214 @@ html[data-map-theme="dark"] .between-arrow-icon {
     stroke-dashoffset: -56;
   }
 }
+
+/* Journey planner controls */
+.journey-panel-section {
+  gap: 9px;
+}
+
+.journey-action-row {
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 1px 2px 4px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.journey-action-row::-webkit-scrollbar {
+  display: none;
+}
+
+.journey-action-button {
+  flex: 0 0 auto;
+  border: 1px solid #dbeafe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 8px 11px;
+  cursor: pointer;
+  touch-action: manipulation;
+  white-space: nowrap;
+}
+
+.journey-action-button:active {
+  transform: scale(0.97);
+}
+
+.journey-destination-button,
+.journey-primary-button {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+
+.journey-plan-summary {
+  display: grid;
+  gap: 6px;
+}
+
+.journey-plan-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 9px;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.journey-plan-row.is-set {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.journey-plan-row.is-missing {
+  border-style: dashed;
+}
+
+.journey-plan-label {
+  font-size: 11px;
+  font-weight: 900;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.journey-plan-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 850;
+  color: #0f172a;
+}
+
+.journey-prompt-card,
+.journey-result-header {
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+}
+
+.journey-options-strip {
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 1px 2px 8px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.journey-options-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.journey-option-pill {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "route main"
+    "route time"
+    "badge badge";
+  align-items: center;
+  gap: 3px 8px;
+  width: clamp(172px, 58vw, 230px);
+  min-height: 70px;
+  padding: 8px 9px;
+  border: 1px solid #d1d5db;
+  border-radius: 16px;
+  background: #f8fafc;
+  color: #111827;
+  cursor: pointer;
+  text-align: left;
+}
+
+.journey-option-route {
+  grid-area: route;
+  min-width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.journey-option-main {
+  grid-area: main;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.journey-option-time {
+  grid-area: time;
+  font-size: 12px;
+  font-weight: 750;
+  color: #64748b;
+}
+
+.journey-option-badge {
+  grid-area: badge;
+  justify-self: start;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #ede9fe;
+  color: #6d28d9;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.journey-route-flow-line {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  animation: route-flow-forward 2.1s linear infinite;
+}
+
+html[data-map-theme="dark"] .journey-action-button {
+  background: rgba(30, 41, 59, 0.98);
+  border-color: rgba(59, 130, 246, 0.65);
+  color: #bfdbfe;
+}
+
+html[data-map-theme="dark"] .journey-destination-button,
+html[data-map-theme="dark"] .journey-primary-button {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+html[data-map-theme="dark"] .journey-plan-row,
+html[data-map-theme="dark"] .journey-prompt-card,
+html[data-map-theme="dark"] .journey-result-header,
+html[data-map-theme="dark"] .journey-option-pill {
+  background: rgba(39, 39, 42, 0.94);
+  border-color: rgba(82, 82, 91, 0.9);
+}
+
+html[data-map-theme="dark"] .journey-plan-value,
+html[data-map-theme="dark"] .journey-option-main {
+  color: #f4f4f5;
+}
+
+html[data-map-theme="dark"] .journey-plan-label,
+html[data-map-theme="dark"] .journey-option-time {
+  color: #a1a1aa;
+}
