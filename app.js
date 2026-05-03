@@ -1580,8 +1580,8 @@ function createBusIcon(trip, isSelected = false, variant = "scheduled", delayCla
   if (isSelected) classes.push("selected");
   if (variant === "live") classes.push(delayClass);
 
-  const iconSize = variant === "live" ? [48, 48] : [34, 34];
-  const iconAnchor = variant === "live" ? [24, 24] : [17, 17];
+  const iconSize = [34, 34];
+  const iconAnchor = [17, 17];
 
   return L.divIcon({
     className: "vehicle-marker-icon",

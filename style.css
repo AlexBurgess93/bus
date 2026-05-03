@@ -660,11 +660,11 @@ main {
 }
 
 .route-bus-marker.live .route-bus-badge {
-  min-width: 36px;
-  height: 36px;
-  padding: 0 8px;
-  border-width: 3px;
-  font-size: 12px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border-width: 2px;
+  font-size: 11px;
   background: #ffffff;
 }
 
@@ -725,9 +725,9 @@ main {
 }
 
 .route-bus-marker.live.selected .route-bus-pulse {
-  width: 48px;
-  height: 48px;
-  opacity: 0.56;
+  width: 42px;
+  height: 42px;
+  opacity: 0.46;
 }
 
 .route-bus-scheduled-dot {
@@ -1851,33 +1851,3 @@ body.is-map-moving .vehicle-marker-icon {
   transition: background-color 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
 }
 
-.selection-panel.has-selection .panel-section,
-.selection-panel.has-selection .panel-empty {
-  animation: panelContentIn 180ms ease-out;
-}
-
-@keyframes panelContentIn {
-  0% {
-    opacity: 0;
-    transform: translateY(5px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.eta-chip {
-  animation: etaChipIn 180ms ease-out both;
-}
-
-@keyframes etaChipIn {
-  0% {
-    opacity: 0;
-    transform: translateY(5px) scale(0.96);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
