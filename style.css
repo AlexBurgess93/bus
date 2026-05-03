@@ -1598,3 +1598,138 @@ html[data-map-theme="dark"] .theme-toggle-button.is-active img {
     opacity: 0;
   }
 }
+
+/* Dark-mode readability pass: neutral grey panel + darker service badges. */
+html[data-map-theme="dark"] .selection-panel {
+  background: rgba(24, 24, 27, 0.97);
+  border-top-color: rgba(63, 63, 70, 0.95);
+  box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.34);
+  color: #f4f4f5;
+}
+
+html[data-map-theme="dark"] .panel-title,
+html[data-map-theme="dark"] .between-value,
+html[data-map-theme="dark"] .panel-empty-title,
+html[data-map-theme="dark"] .arrival-time {
+  color: #f4f4f5;
+}
+
+html[data-map-theme="dark"] .panel-subtitle,
+html[data-map-theme="dark"] .panel-empty-subtitle,
+html[data-map-theme="dark"] .arrival-destination,
+html[data-map-theme="dark"] .pinned-status-row {
+  color: #a1a1aa;
+}
+
+html[data-map-theme="dark"] .arrival-pill,
+html[data-map-theme="dark"] .transport-filter-button,
+html[data-map-theme="dark"] .stop-routes-toggle,
+html[data-map-theme="dark"] .route-list-toggle,
+html[data-map-theme="dark"] .arrival-empty,
+html[data-map-theme="dark"] .between-card,
+html[data-map-theme="dark"] .pinned-preview span,
+html[data-map-theme="dark"] .stop-route-pill,
+html[data-map-theme="dark"] .stop-route-empty {
+  background: rgba(39, 39, 42, 0.94);
+  border-color: rgba(82, 82, 91, 0.9);
+  color: #e4e4e7;
+}
+
+html[data-map-theme="dark"] .transport-filter-button.is-active {
+  background: #f4f4f5;
+  border-color: #f4f4f5;
+  color: #18181b;
+}
+
+html[data-map-theme="dark"] .arrival-pill.ahead {
+  background: rgba(30, 58, 138, 0.24);
+  border-color: rgba(37, 99, 235, 0.7);
+}
+
+html[data-map-theme="dark"] .arrival-pill.behind {
+  background: rgba(154, 52, 18, 0.24);
+  border-color: rgba(249, 115, 22, 0.74);
+}
+
+html[data-map-theme="dark"] .arrival-pill.very-late {
+  background: rgba(127, 29, 29, 0.26);
+  border-color: rgba(220, 38, 38, 0.78);
+}
+
+html[data-map-theme="dark"] .arrival-pill.on-time {
+  background: rgba(20, 83, 45, 0.24);
+  border-color: rgba(22, 163, 74, 0.74);
+}
+
+html[data-map-theme="dark"] .arrival-pill.ahead .arrival-time {
+  color: #93c5fd;
+}
+
+html[data-map-theme="dark"] .arrival-pill.behind .arrival-time {
+  color: #fdba74;
+}
+
+html[data-map-theme="dark"] .arrival-pill.very-late .arrival-time {
+  color: #fca5a5;
+}
+
+html[data-map-theme="dark"] .arrival-pill.on-time .arrival-time {
+  color: #86efac;
+}
+
+html[data-map-theme="dark"] .panel-close-button {
+  background: #27272a;
+  color: #f4f4f5;
+}
+
+html[data-map-theme="dark"] .route-bus-badge {
+  background: #18181b;
+  color: #f9fafb;
+  border-color: #52525b;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.48);
+}
+
+html[data-map-theme="dark"] .route-bus-marker.scheduled .route-bus-badge {
+  background: rgba(24, 24, 27, 0.9);
+  color: #f4f4f5;
+  border-color: #71717a;
+  opacity: 0.86;
+}
+
+html[data-map-theme="dark"] .route-bus-marker.live .route-bus-badge {
+  background: #18181b;
+  color: #ffffff;
+}
+
+html[data-map-theme="dark"] .route-bus-marker.live.ahead .route-bus-badge {
+  border-color: #60a5fa;
+  color: #ffffff;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.16), 0 6px 18px rgba(96, 165, 250, 0.32);
+}
+
+html[data-map-theme="dark"] .route-bus-marker.live.behind .route-bus-badge {
+  border-color: #fb923c;
+  color: #ffffff;
+  box-shadow: 0 0 0 2px rgba(251, 146, 60, 0.18), 0 6px 18px rgba(251, 146, 60, 0.34);
+}
+
+html[data-map-theme="dark"] .route-bus-marker.live.very-late .route-bus-badge {
+  border-color: #f87171;
+  color: #ffffff;
+  box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.18), 0 6px 18px rgba(248, 113, 113, 0.34);
+}
+
+html[data-map-theme="dark"] .route-bus-marker.live.on-time .route-bus-badge {
+  border-color: #4ade80;
+  color: #ffffff;
+  box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.16), 0 6px 18px rgba(74, 222, 128, 0.32);
+}
+
+html[data-map-theme="dark"] .route-bus-marker.transport-train .route-bus-badge,
+html[data-map-theme="dark"] .route-bus-marker.transport-ferry .route-bus-badge,
+html[data-map-theme="dark"] .route-bus-marker.transport-tram .route-bus-badge,
+html[data-map-theme="dark"] .route-bus-marker.transport-subway .route-bus-badge,
+html[data-map-theme="dark"] .route-bus-marker.transport-transit .route-bus-badge {
+  background: #18181b;
+  color: #ffffff;
+}
