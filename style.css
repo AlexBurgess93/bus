@@ -1910,3 +1910,116 @@ html[data-map-theme="dark"] .between-arrow-icon {
   filter: brightness(0) invert(1);
   opacity: 0.82;
 }
+
+
+/* Direction-flow lines for selected routes and stop route previews. */
+.selected-route-flow-line,
+.stop-route-flow-line {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  animation: route-flow-forward 2.4s linear infinite;
+}
+
+.stop-route-flow-line {
+  opacity: 0.5;
+}
+
+@keyframes route-flow-forward {
+  to {
+    stroke-dashoffset: -56;
+  }
+}
+
+/* Schedule preview / time scrubber. */
+.time-travel-button {
+  top: calc(env(safe-area-inset-top, 0px) + 228px);
+  font-size: 13px;
+  font-weight: 950;
+  letter-spacing: -0.04em;
+  color: #111827;
+}
+
+.time-travel-button.is-active {
+  background: #111827;
+  color: #ffffff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.24), 0 0 0 3px rgba(245, 158, 11, 0.25);
+}
+
+.time-travel-panel {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 286px);
+  right: 14px;
+  z-index: 930;
+  width: min(320px, calc(100vw - 28px));
+  padding: 12px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.22);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.time-travel-panel.is-hidden {
+  display: none;
+}
+
+.time-travel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 9px;
+  font-size: 12px;
+  font-weight: 850;
+  color: #475569;
+}
+
+.time-travel-header strong {
+  color: #111827;
+  font-size: 13px;
+}
+
+.time-travel-slider {
+  width: 100%;
+  accent-color: #f59e0b;
+}
+
+html[data-map-theme="dark"] .time-travel-button {
+  background: rgba(17, 24, 39, 0.96);
+  color: #f8fafc;
+  border-color: rgba(71, 85, 105, 0.9);
+}
+
+html[data-map-theme="dark"] .time-travel-button.is-active {
+  background: #f8fafc;
+  color: #111827;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35), 0 0 0 3px rgba(245, 158, 11, 0.32);
+}
+
+html[data-map-theme="dark"] .time-travel-panel {
+  background: rgba(17, 24, 39, 0.96);
+  border-color: rgba(71, 85, 105, 0.9);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.42);
+}
+
+html[data-map-theme="dark"] .time-travel-header {
+  color: #94a3b8;
+}
+
+html[data-map-theme="dark"] .time-travel-header strong {
+  color: #f8fafc;
+}
+
+@media (max-width: 640px) {
+  .time-travel-button {
+    top: calc(env(safe-area-inset-top, 0px) + 194px) !important;
+    right: 10px;
+  }
+
+  .time-travel-panel {
+    top: calc(env(safe-area-inset-top, 0px) + 246px);
+    right: 10px;
+    width: min(300px, calc(100vw - 20px));
+  }
+}

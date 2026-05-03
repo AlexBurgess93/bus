@@ -8,6 +8,8 @@ const map = L.map("map", {
   preferCanvas: true
 }).setView(perth, 11);
 
+const routeFlowRenderer = L.svg({ padding: 0.5 });
+
 const mapTileLayers = {
   light: L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
     maxZoom: 19,
@@ -33,6 +35,7 @@ const STOP_DOTS_MIN_ZOOM = 15;
 const DETAILED_MARKER_MIN_ZOOM = 14;
 const SERVICE_DOTS_MIN_ZOOM = 10;
 const NETWORK_LAYER_MAX_ZOOM = 14;
+const TIME_TRAVEL_MAX_MINUTES = 120;
 
 let currentRouteLine = null;
 let selectedTripId = null;
@@ -78,6 +81,9 @@ let pinnedViewEnabled = false;
 let activeMapPinMarker = null;
 let tripLookupByTripId = {};
 let etaMarkers = [];
+let timeTravelActive = false;
+let timeTravelBaseSeconds = null;
+let timeTravelOffsetMinutes = 0;
 
 const trackingModeButtons = document.querySelectorAll(".tracking-mode-button");
 
@@ -94,6 +100,10 @@ const LIVE_NOTICE_SEEN_KEY = "tripTrackerLiveNoticeSeen";
 const locateUserButton = document.getElementById("locateUserButton");
 const themeToggleButton = document.getElementById("themeToggleButton");
 const themeToggleIcon = document.getElementById("themeToggleIcon");
+const timeTravelButton = document.getElementById("timeTravelButton");
+const timeTravelPanel = document.getElementById("timeTravelPanel");
+const timeTravelSlider = document.getElementById("timeTravelSlider");
+const timeTravelLabel = document.getElementById("timeTravelLabel");
 
 
 
@@ -113,7 +123,8 @@ function applyMapTheme(theme) {
     currentRouteLine.setStyle({
       color: getRoutePathColour(),
       weight: getRoutePathWeight(),
-      opacity: getRoutePathOpacity()
+      opacity: getRoutePathOpacity(),
+      dashArray: trackingMode === "ghost" ? null : "10 18"
     });
   }
 
@@ -1341,9 +1352,14 @@ function drawStopUpcomingPaths(upcomingItems) {
     if (!shapeCoords) return;
 
     const line = L.polyline(shapeCoords, {
+      renderer: routeFlowRenderer,
       color: "#94a3b8",
       weight: 4,
-      opacity: 0.58
+      opacity: 0.58,
+      dashArray: "8 20",
+      lineCap: "round",
+      lineJoin: "round",
+      className: "stop-route-flow-line"
     }).addTo(map);
 
     line.bringToBack();
@@ -1658,14 +1674,14 @@ function setVehicleMarkerIcon(marker, trip, isSelected = false, variant = "sched
 function getScheduledMarkerOpacity(tripId) {
   if (trackingMode === "live") return 0;
   if (selectedTripId && tripId !== selectedTripId) return 0;
-  if (selectedStopId && !highlightedTripIds.has(tripId)) return 0.15;
+  if (selectedStopId && !highlightedTripIds.has(tripId)) return 0.08;
   return trackingMode === "ghost" ? 0.72 : 1;
 }
 
 function getLiveMarkerOpacity(tripId) {
   if (trackingMode === "scheduled") return 0;
   if (selectedTripId && tripId !== selectedTripId) return 0;
-  if (selectedStopId && !highlightedTripIds.has(tripId)) return 0.15;
+  if (selectedStopId && !highlightedTripIds.has(tripId)) return 0.08;
   return 1;
 }
 
@@ -1711,11 +1727,14 @@ function drawTripShapeByShapeId(shapeId) {
   clearRouteLine();
 
   currentRouteLine = L.polyline(shapeCoords, {
+    renderer: routeFlowRenderer,
     color: getRoutePathColour(),
     weight: getRoutePathWeight(),
     opacity: getRoutePathOpacity(),
     lineCap: "round",
-    lineJoin: "round"
+    lineJoin: "round",
+    dashArray: trackingMode === "ghost" ? null : "10 18",
+    className: trackingMode === "ghost" ? "selected-route-line" : "selected-route-line selected-route-flow-line"
   }).addTo(map);
 
   currentRouteLine.bringToBack();
@@ -2010,23 +2029,12 @@ function showLocationMessage(title, message) {
   showSelectionPanel();
 }
 
-function selectNearestStopFromLocation(lat, lon) {
-  const nearestStop = findNearestStop(lat, lon);
-
-  if (!nearestStop) {
-    showLocationMessage("No nearby stop found", "The app could not find a stop in the current dataset.");
-    return;
-  }
-
-  const upcoming = getUpcomingForStop(nearestStop.id, 30);
-
+function focusUserLocation(lat, lon) {
   clearBusFocus();
-  focusTripsForStop(nearestStop.id, upcoming);
-  drawStopUpcomingPaths(upcoming);
-  highlightRelevantStopMarkers(nearestStop.id, upcoming);
-  renderStopPanel(nearestStop, upcoming);
 
-  map.setView([nearestStop.lat, nearestStop.lon], Math.max(map.getZoom(), 15), {
+  showLocationMessage("Your location", "You are centred on the map. Zoom or tap a nearby stop to explore services.");
+
+  map.setView([lat, lon], Math.max(map.getZoom(), 16), {
     animate: true
   });
 }
@@ -2070,7 +2078,7 @@ function requestUserLocation() {
       const lon = position.coords.longitude;
 
       updateUserLocationMarker(lat, lon);
-      selectNearestStopFromLocation(lat, lon);
+      focusUserLocation(lat, lon);
     },
     error => {
       const message = error.code === error.PERMISSION_DENIED
@@ -2432,6 +2440,92 @@ function refreshMapAfterInteraction() {
 }
 
 
+// ---------- Schedule preview / time scrubber ----------
+function formatTimeTravelLabel(offsetMinutes) {
+  if (!offsetMinutes) return "Now";
+  if (offsetMinutes < 60) return `+${offsetMinutes}m`;
+
+  const hours = Math.floor(offsetMinutes / 60);
+  const minutes = offsetMinutes % 60;
+
+  return minutes ? `+${hours}h ${minutes}m` : `+${hours}h`;
+}
+
+function refreshSelectedStopPanelIfNeeded() {
+  if (!selectedStopId) return;
+
+  const stop = stopLookup[selectedStopId];
+  if (!stop) return;
+
+  const upcoming = getUpcomingForStop(selectedStopId, 30);
+  highlightedTripIds = new Set(upcoming.map(item => item.tripId));
+  drawStopUpcomingPaths(upcoming);
+  highlightRelevantStopMarkers(selectedStopId, upcoming);
+  renderStopPanel(stop, upcoming);
+}
+
+function refreshCurrentMapState() {
+  updateBusPositionsLive();
+
+  if (selectedStopId) {
+    refreshSelectedStopPanelIfNeeded();
+  }
+
+  if (selectedTripId) {
+    drawEtaMarkersForTrip(selectedTripId);
+    drawGhostRouteSegmentForTrip(selectedTripId);
+  }
+}
+
+function setTimeTravelOffset(offsetMinutes) {
+  timeTravelOffsetMinutes = Math.max(0, Math.min(TIME_TRAVEL_MAX_MINUTES, Number(offsetMinutes) || 0));
+
+  if (timeTravelLabel) {
+    timeTravelLabel.textContent = formatTimeTravelLabel(timeTravelOffsetMinutes);
+  }
+
+  if (!timeTravelActive || timeTravelBaseSeconds === null) return;
+
+  simulatedCurrentSecondsOverride = timeTravelBaseSeconds + timeTravelOffsetMinutes * 60;
+  refreshCurrentMapState();
+}
+
+function setTimeTravelActive(isActive) {
+  timeTravelActive = Boolean(isActive);
+
+  if (timeTravelButton) {
+    timeTravelButton.classList.toggle("is-active", timeTravelActive);
+    timeTravelButton.setAttribute("aria-pressed", String(timeTravelActive));
+  }
+
+  if (timeTravelPanel) {
+    timeTravelPanel.classList.toggle("is-hidden", !timeTravelActive);
+  }
+
+  if (timeTravelActive) {
+    timeTravelBaseSeconds = getCurrentSecondsPrecise();
+    timeTravelOffsetMinutes = Number(timeTravelSlider?.value || 0);
+    setTrackingMode("scheduled");
+    setTimeTravelOffset(timeTravelOffsetMinutes);
+    return;
+  }
+
+  timeTravelBaseSeconds = null;
+  timeTravelOffsetMinutes = 0;
+  simulatedCurrentSecondsOverride = null;
+
+  if (timeTravelSlider) {
+    timeTravelSlider.value = "0";
+  }
+
+  if (timeTravelLabel) {
+    timeTravelLabel.textContent = "Now";
+  }
+
+  refreshCurrentMapState();
+}
+
+
 // ---------- Tracking mode controls and app events ----------
 function showLiveNoticeOnce() {
   if (!liveNoticeModal) return;
@@ -2464,7 +2558,8 @@ function setTrackingMode(mode) {
     currentRouteLine.setStyle({
       color: getRoutePathColour(),
       weight: getRoutePathWeight(),
-      opacity: getRoutePathOpacity()
+      opacity: getRoutePathOpacity(),
+      dashArray: trackingMode === "ghost" ? null : "10 18"
     });
   }
 
@@ -2511,6 +2606,43 @@ if (locateUserButton) {
   });
 
   locateUserButton.addEventListener("touchstart", event => {
+    event.stopPropagation();
+  }, { passive: true });
+}
+
+if (timeTravelButton) {
+  timeTravelButton.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    setTimeTravelActive(!timeTravelActive);
+  });
+
+  timeTravelButton.addEventListener("touchstart", event => {
+    event.stopPropagation();
+  }, { passive: true });
+}
+
+if (timeTravelSlider) {
+  timeTravelSlider.addEventListener("input", event => {
+    event.stopPropagation();
+    setTimeTravelOffset(event.target.value);
+  });
+
+  timeTravelSlider.addEventListener("click", event => {
+    event.stopPropagation();
+  });
+
+  timeTravelSlider.addEventListener("touchstart", event => {
+    event.stopPropagation();
+  }, { passive: true });
+}
+
+if (timeTravelPanel) {
+  timeTravelPanel.addEventListener("click", event => {
+    event.stopPropagation();
+  });
+
+  timeTravelPanel.addEventListener("touchstart", event => {
     event.stopPropagation();
   }, { passive: true });
 }
