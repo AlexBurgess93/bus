@@ -5,10 +5,26 @@ const map = L.map("map", {
   preferCanvas: true
 }).setView(perth, 11);
 
-L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-  maxZoom: 19,
-  attribution: "&copy; OpenStreetMap contributors &copy; CARTO"
-}).addTo(map);
+const mapTileLayers = {
+  light: L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap contributors &copy; CARTO"
+  }),
+  dark: L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap contributors &copy; CARTO"
+  })
+};
+
+const MAP_THEME_STORAGE_KEY = "tripTrackerMapTheme";
+let currentMapTheme = localStorage.getItem(MAP_THEME_STORAGE_KEY) || "light";
+
+if (!mapTileLayers[currentMapTheme]) {
+  currentMapTheme = "light";
+}
+
+mapTileLayers[currentMapTheme].addTo(map);
+document.documentElement.dataset.mapTheme = currentMapTheme;
 
 const STOP_DOTS_MIN_ZOOM = 15;
 const DETAILED_MARKER_MIN_ZOOM = 14;
@@ -78,6 +94,34 @@ const selectionPanel = document.getElementById("selectionPanel");
 const selectionPanelContent = document.getElementById("selectionPanelContent");
 const closeSelectionPanelButton = document.getElementById("closeSelectionPanelButton");
 const locateUserButton = document.getElementById("locateUserButton");
+const themeToggleButton = document.getElementById("themeToggleButton");
+const themeToggleIcon = document.getElementById("themeToggleIcon");
+
+
+function applyMapTheme(theme) {
+  if (!mapTileLayers[theme] || theme === currentMapTheme) return;
+
+  map.removeLayer(mapTileLayers[currentMapTheme]);
+  mapTileLayers[theme].addTo(map);
+
+  currentMapTheme = theme;
+  localStorage.setItem(MAP_THEME_STORAGE_KEY, currentMapTheme);
+  document.documentElement.dataset.mapTheme = currentMapTheme;
+  updateThemeToggleButton();
+}
+
+function updateThemeToggleButton() {
+  if (!themeToggleButton || !themeToggleIcon) return;
+
+  const isDark = currentMapTheme === "dark";
+  themeToggleButton.classList.toggle("is-active", isDark);
+  themeToggleButton.setAttribute("aria-label", isDark ? "Enable light map" : "Enable dark map");
+  themeToggleIcon.setAttribute("src", isDark ? "enable_light_mode.svg" : "enable_dark_mode.svg");
+}
+
+function toggleMapTheme() {
+  applyMapTheme(currentMapTheme === "dark" ? "light" : "dark");
+}
 
 function escapeHTML(value) {
   return String(value ?? "")
@@ -2244,6 +2288,18 @@ betaModeButtons.forEach(button => {
   });
 });
 
+if (themeToggleButton) {
+  themeToggleButton.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    toggleMapTheme();
+  });
+
+  themeToggleButton.addEventListener("touchstart", event => {
+    event.stopPropagation();
+  }, { passive: true });
+}
+
 if (locateUserButton) {
   locateUserButton.addEventListener("click", event => {
     event.preventDefault();
@@ -2288,6 +2344,7 @@ selectionPanel.addEventListener("touchstart", event => {
 }, { passive: true });
 
 async function init() {
+  updateThemeToggleButton();
   hideSelectionPanel();
 
   await loadCoreData();

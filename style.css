@@ -1371,3 +1371,113 @@ main {
     font-size: 10px;
   }
 }
+
+/* Final map utility controls: GPS + light/dark theme toggle */
+.map-round-button {
+  position: absolute;
+  right: 14px;
+  z-index: 920;
+  width: 48px;
+  height: 48px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 999px;
+  background: rgba(17, 24, 39, 0.94);
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.25);
+  cursor: pointer;
+  touch-action: manipulation;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.map-round-button img {
+  width: 23px;
+  height: 23px;
+  display: block;
+}
+
+.map-round-button:active {
+  transform: scale(0.96);
+}
+
+.map-round-button.is-active {
+  background: rgba(255, 255, 255, 0.96);
+  border-color: rgba(148, 163, 184, 0.55);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.2), 0 0 0 3px rgba(37, 99, 235, 0.14);
+}
+
+/* Tracking controls remain top-right. GPS sits below. Theme toggle sits below GPS. */
+.beta-mode-control {
+  top: calc(env(safe-area-inset-top, 0px) + 14px) !important;
+  right: 14px !important;
+  bottom: auto !important;
+  max-width: min(330px, calc(100vw - 28px));
+}
+
+.locate-button {
+  top: calc(env(safe-area-inset-top, 0px) + 112px) !important;
+  right: 14px !important;
+}
+
+.theme-toggle-button {
+  top: calc(env(safe-area-inset-top, 0px) + 170px);
+}
+
+html[data-map-theme="dark"] .selection-panel {
+  background: rgba(15, 23, 42, 0.96);
+  border-top-color: rgba(51, 65, 85, 0.95);
+  color: #e5e7eb;
+}
+
+html[data-map-theme="dark"] .panel-title,
+html[data-map-theme="dark"] .between-value,
+html[data-map-theme="dark"] .panel-empty-title {
+  color: #f8fafc;
+}
+
+html[data-map-theme="dark"] .panel-subtitle,
+html[data-map-theme="dark"] .panel-empty-subtitle {
+  color: #94a3b8;
+}
+
+html[data-map-theme="dark"] .arrival-pill,
+html[data-map-theme="dark"] .transport-filter-button,
+html[data-map-theme="dark"] .route-list-toggle,
+html[data-map-theme="dark"] .arrival-empty {
+  background: rgba(30, 41, 59, 0.9);
+  border-color: rgba(71, 85, 105, 0.9);
+  color: #e5e7eb;
+}
+
+@media (max-width: 640px) {
+  .map-round-button {
+    right: 10px;
+    width: 46px;
+    height: 46px;
+  }
+
+  .map-round-button img {
+    width: 22px;
+    height: 22px;
+  }
+
+  .beta-mode-control {
+    top: calc(env(safe-area-inset-top, 0px) + 10px) !important;
+    right: 10px !important;
+    bottom: auto !important;
+    max-width: min(315px, calc(100vw - 20px));
+  }
+
+  .locate-button {
+    top: calc(env(safe-area-inset-top, 0px) + 104px) !important;
+    right: 10px !important;
+  }
+
+  .theme-toggle-button {
+    top: calc(env(safe-area-inset-top, 0px) + 160px);
+    right: 10px;
+  }
+}
