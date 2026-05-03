@@ -392,8 +392,8 @@ main {
   }
 }
 
-.beta-link-button,
-.beta-back-button {
+.legacy-link-button,
+.legacy-back-button {
   position: absolute;
   right: 14px;
   z-index: 900;
@@ -413,16 +413,16 @@ main {
   touch-action: manipulation;
 }
 
-.beta-link-button {
+.legacy-link-button {
   top: 14px;
 }
 
-.beta-back-button {
+.legacy-back-button {
   top: 14px;
 }
 
-.beta-link-button:active,
-.beta-back-button:active {
+.legacy-link-button:active,
+.legacy-back-button:active {
   transform: scale(0.97);
 }
 
@@ -457,7 +457,7 @@ main {
   justify-content: center;
 }
 
-.beta-mode-control {
+.tracking-mode-control {
   position: absolute;
   right: 14px;
   bottom: calc(clamp(118px, 18vh, 164px) + 14px);
@@ -472,7 +472,7 @@ main {
   backdrop-filter: blur(10px);
 }
 
-.beta-mode-title {
+.tracking-mode-title {
   font-size: 11px;
   font-weight: 950;
   letter-spacing: 0.08em;
@@ -480,12 +480,12 @@ main {
   color: #64748b;
 }
 
-.beta-segmented-control {
+.tracking-segmented-control {
   display: flex;
   gap: 4px;
 }
 
-.beta-mode-button {
+.tracking-mode-button {
   border: 0;
   border-radius: 999px;
   padding: 7px 10px;
@@ -497,12 +497,12 @@ main {
   touch-action: manipulation;
 }
 
-.beta-mode-button.is-active {
+.tracking-mode-button.is-active {
   background: #111827;
   color: #ffffff;
 }
 
-.beta-delay-chip {
+.delay-chip {
   margin-left: auto;
   flex: 0 0 auto;
   padding: 6px 9px;
@@ -512,35 +512,35 @@ main {
   white-space: nowrap;
 }
 
-.beta-delay-chip.ahead {
+.delay-chip.ahead {
   background: #eff6ff;
   color: #1d4ed8;
   border: 1px solid #bfdbfe;
 }
 
-.beta-delay-chip.behind {
+.delay-chip.behind {
   background: #fff7ed;
   color: #c2410c;
   border: 1px solid #fed7aa;
 }
 
-.beta-delay-chip.very-late {
+.delay-chip.very-late {
   background: #fef2f2;
   color: #b91c1c;
   border: 1px solid #fecaca;
 }
 
-.beta-delay-chip.on-time {
+.delay-chip.on-time {
   background: #ecfdf5;
   color: #047857;
   border: 1px solid #bbf7d0;
 }
 
-.beta-delay-chip .delay-value {
+.delay-chip .delay-value {
   display: inline-block;
 }
 
-.beta-delay-chip .delay-detail {
+.delay-chip .delay-detail {
   margin-left: 4px;
   font-weight: 850;
   opacity: 0.72;
@@ -618,7 +618,7 @@ main {
 }
 
 
-/* Route-number bus markers used by the beta live/scheduled/ghost preview. */
+/* Route-number bus markers used by the tracking mode preview. */
 .route-bus-marker {
   position: relative;
   width: 100%;
@@ -841,12 +841,12 @@ main {
 }
 
 @media (max-width: 640px) {
-  .beta-link-button {
+  .legacy-link-button {
     top: 12px;
     right: 12px;
   }
 
-  .beta-back-button {
+  .legacy-back-button {
     top: 12px;
     right: 12px;
   }
@@ -891,19 +891,19 @@ main {
   justify-content: center;
 }
 
-.beta-mode-control {
+.tracking-mode-control {
     right: 10px;
     bottom: calc(clamp(112px, 18vh, 146px) + 12px);
     padding: 8px;
     border-radius: 16px;
   }
 
-  .beta-mode-button {
+  .tracking-mode-button {
     padding: 6px 8px;
     font-size: 11px;
   }
 
-  .beta-delay-chip {
+  .delay-chip {
     padding: 5px 7px;
     font-size: 10px;
   }
@@ -969,7 +969,7 @@ main {
 }
 
 /* Reposition tracking controls to the top-right, aligned above GPS. */
-.beta-mode-control {
+.tracking-mode-control {
   top: calc(env(safe-area-inset-top, 0px) + 14px);
   right: 14px;
   bottom: auto;
@@ -982,7 +982,7 @@ main {
 }
 
 @media (max-width: 640px) {
-  .beta-mode-control {
+  .tracking-mode-control {
     top: calc(env(safe-area-inset-top, 0px) + 10px);
     right: 10px;
     bottom: auto;
@@ -990,11 +990,11 @@ main {
     border-radius: 16px;
   }
 
-  .beta-segmented-control {
+  .tracking-segmented-control {
     gap: 4px;
   }
 
-  .beta-mode-button {
+  .tracking-mode-button {
     min-height: 34px;
     padding: 7px 9px;
     font-size: 11px;
@@ -1410,7 +1410,7 @@ main {
 }
 
 /* Tracking controls remain top-right. GPS sits below. Theme toggle sits below GPS. */
-.beta-mode-control {
+.tracking-mode-control {
   top: calc(env(safe-area-inset-top, 0px) + 14px) !important;
   right: 14px !important;
   bottom: auto !important;
@@ -1464,7 +1464,7 @@ html[data-map-theme="dark"] .arrival-empty {
     height: 22px;
   }
 
-  .beta-mode-control {
+  .tracking-mode-control {
     top: calc(env(safe-area-inset-top, 0px) + 10px) !important;
     right: 10px !important;
     bottom: auto !important;
@@ -1484,16 +1484,16 @@ html[data-map-theme="dark"] .arrival-empty {
 
 
 /* Refinement: tracking mode control now uses only tabs, no title. */
-.beta-mode-title {
+.tracking-mode-title {
   display: none !important;
 }
 
-.beta-mode-control {
+.tracking-mode-control {
   gap: 0 !important;
   padding: 10px !important;
 }
 
-.beta-segmented-control {
+.tracking-segmented-control {
   align-items: center;
 }
 
@@ -1502,7 +1502,7 @@ html[data-map-theme="dark"] .theme-toggle-button.is-active img {
 }
 
 @media (max-width: 640px) {
-  .beta-mode-control {
+  .tracking-mode-control {
     padding: 8px !important;
   }
 

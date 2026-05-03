@@ -1,3 +1,6 @@
+// Trip Tracker main application
+// Structure: map setup → state → UI rendering → map layers → data/time helpers → app lifecycle.
+
 const perth = [-31.9523, 115.8613];
 
 const map = L.map("map", {
@@ -31,14 +34,6 @@ const DETAILED_MARKER_MIN_ZOOM = 14;
 const SERVICE_DOTS_MIN_ZOOM = 10;
 const NETWORK_LAYER_MAX_ZOOM = 14;
 
-const USEFUL_ROUTES = [
-  "24", "32", "33", "39",
-  "72", "73",
-  "176", "177", "178", "179",
-  "270",
-  "910", "930", "930X", "935", "940"
-];
-
 let currentRouteLine = null;
 let selectedTripId = null;
 let selectedStopId = null;
@@ -60,7 +55,6 @@ let stopRouteLines = [];
 let networkRouteLinesByShapeId = {};
 let latestTripPositionsByTripId = {};
 let selectedPanelType = null;
-let activeTripIdsGlobal = new Set();
 let serviceDayOffsetSeconds = 0;
 let simulatedCurrentSecondsOverride = null;
 let busUpdateTimerId = null;
@@ -71,7 +65,7 @@ const MAP_SETTLE_REFRESH_DELAY_MS = 120;
 let hasWarnedAboutNoActiveTrips = false;
 let userLocationMarker = null;
 
-let betaTrackingMode = "scheduled";
+let trackingMode = "scheduled";
 let liveBusMarkersByTripId = {};
 let latestLiveTripPositionsByTripId = {};
 let ghostRouteSegmentLine = null;
@@ -85,7 +79,7 @@ let activeMapPinMarker = null;
 let tripLookupByTripId = {};
 let etaMarkers = [];
 
-const betaModeButtons = document.querySelectorAll(".beta-mode-button");
+const trackingModeButtons = document.querySelectorAll(".tracking-mode-button");
 
 // Set this to false if you only ever want true real-time behaviour.
 // When true, the prototype still shows buses if the current clock time has no active trips in the processed dataset.
@@ -102,6 +96,8 @@ const themeToggleButton = document.getElementById("themeToggleButton");
 const themeToggleIcon = document.getElementById("themeToggleIcon");
 
 
+
+// ---------- Map theme controls ----------
 function applyMapTheme(theme) {
   if (!mapTileLayers[theme] || theme === currentMapTheme) return;
 
@@ -127,6 +123,8 @@ function toggleMapTheme() {
   applyMapTheme(currentMapTheme === "dark" ? "light" : "dark");
 }
 
+
+// ---------- Generic helpers ----------
 function escapeHTML(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -136,6 +134,8 @@ function escapeHTML(value) {
     .replaceAll("'", "&#039;");
 }
 
+
+// ---------- Bottom context panel ----------
 function showSelectionPanel() {
   // The panel is always present in the layout.
   // This prevents Leaflet from resizing/re-centering the map when content changes.
@@ -148,6 +148,8 @@ function hideSelectionPanel() {
   renderDefaultContextPanel();
 }
 
+
+// ---------- Pinning and route filtering ----------
 function getTripRouteKey(trip = {}) {
   const routeId = String(trip.routeId ?? "").trim();
   if (routeId) return routeId;
@@ -290,17 +292,6 @@ function togglePinnedStop(stopId) {
   updateNetworkLayer();
 
   return pinnedStopIds.has(stopId);
-}
-
-function resetPins() {
-  pinnedRouteIds = new Set();
-  pinnedStopIds = new Set();
-  pinnedViewEnabled = false;
-  savePinState();
-  clearBusFocus();
-  renderDefaultContextPanel();
-  updateBusPositionsLive();
-  updateNetworkLayer();
 }
 
 function getRoutesForStop(stopId) {
@@ -471,6 +462,8 @@ function bindTransportFilterButtons() {
   });
 }
 
+
+// ---------- Transport mode filtering ----------
 function setTransportModeFilter(mode) {
   const nextMode = ["all", "bus", "train", "ferry", "pinned"].includes(mode) ? mode : "all";
 
@@ -558,6 +551,8 @@ function getTransportAriaLabel(item = {}) {
   return `${mode}${routeLongName ? ` ${routeLongName}` : ""}${headsign ? ` to ${headsign}` : ""}`;
 }
 
+
+// ---------- Stop and service detail panels ----------
 function renderStopPanel(stop, upcomingItems) {
   selectedPanelType = "stop";
 
@@ -656,8 +651,10 @@ function renderStopPanel(stop, upcomingItems) {
   showSelectionPanel();
 }
 
+
+// ---------- Schedule/live comparison status ----------
 function getStableLiveDelaySeconds(tripId) {
-  // Deterministic fake live-data offset for the beta demo.
+  // Deterministic fake live-data offset for the visualisation demo.
   // Positive = live bus is behind schedule. Negative = live bus is ahead.
   let hash = 0;
 
@@ -722,11 +719,11 @@ function getDelayColour(delaySeconds) {
 }
 
 function getRoutePathColour() {
-  return betaTrackingMode === "ghost" ? "#111827" : "#f59e0b";
+  return trackingMode === "ghost" ? "#111827" : "#f59e0b";
 }
 
 function getRoutePathOpacity() {
-  return betaTrackingMode === "ghost" ? 0.78 : 0.92;
+  return trackingMode === "ghost" ? 0.78 : 0.92;
 }
 
 function clearGhostRouteSegmentLine() {
@@ -767,7 +764,7 @@ function getShapeSegmentBetweenPositions(shapeCoords, positionA, positionB) {
 function drawGhostRouteSegmentForTrip(tripId) {
   clearGhostRouteSegmentLine();
 
-  if (betaTrackingMode !== "ghost" || !tripId) return;
+  if (trackingMode !== "ghost" || !tripId) return;
 
   const trip = tripLookupByTripId[tripId];
   if (!trip) return;
@@ -831,7 +828,7 @@ function renderBusPanel(trip, variant = selectedBusVariant) {
           <div class="panel-title">${escapeHTML(trip.headsign)}</div>
         </div>
 
-        <div class="beta-delay-chip ${escapeHTML(delayStatus.className)}" title="${escapeHTML(delayStatus.detail)}">
+        <div class="delay-chip ${escapeHTML(delayStatus.className)}" title="${escapeHTML(delayStatus.detail)}">
           <span class="delay-value">${escapeHTML(delayStatus.text)}</span>
           <span class="delay-detail">${escapeHTML(delayStatus.detail)}</span>
         </div>
@@ -892,6 +889,8 @@ function getFutureStopIdsForTrips(tripIds) {
   return futureStopIds;
 }
 
+
+// ---------- Stop marker styling and interaction ----------
 function getDefaultStopStyleForZoom(zoom = map.getZoom()) {
   // Stop dots are high-detail infrastructure. Keep them hidden until the
   // user is close enough to interact with individual stops.
@@ -1173,6 +1172,8 @@ function highlightFutureStopMarkersForTrip(tripId) {
   });
 }
 
+
+// ---------- Multi-scale network route layer ----------
 function clearNetworkLayer() {
   Object.keys(networkRouteLinesByShapeId).forEach(shapeId => {
     map.removeLayer(networkRouteLinesByShapeId[shapeId]);
@@ -1299,6 +1300,8 @@ function drawStopUpcomingPaths(upcomingItems) {
   });
 }
 
+
+// ---------- Time, service-day and timetable helpers ----------
 function timeToSeconds(timeString) {
   if (!timeString || typeof timeString !== "string") return NaN;
 
@@ -1522,6 +1525,8 @@ function interpolateAlongShape(shapeCoords, stopA, stopB, progress) {
   ];
 }
 
+
+// ---------- Service marker rendering ----------
 function createBusIcon(trip, isSelected = false, variant = "scheduled", delayClass = "on-time") {
   const mode = getTransportMode(trip);
   const markerLabel = escapeHTML(getTransportLabel(trip));
@@ -1571,26 +1576,15 @@ function createBusIcon(trip, isSelected = false, variant = "scheduled", delayCla
   });
 }
 
-function setMarkerVisible(marker, visible) {
-  if (!marker) return;
-
-  marker.setOpacity(visible ? 1 : 0);
-
-  const element = marker.getElement?.();
-  if (element) {
-    element.style.pointerEvents = visible ? "auto" : "none";
-  }
-}
-
 function getScheduledMarkerOpacity(tripId) {
-  if (betaTrackingMode === "live") return 0;
+  if (trackingMode === "live") return 0;
   if (selectedTripId && tripId !== selectedTripId) return 0;
   if (selectedStopId && !highlightedTripIds.has(tripId)) return 0.15;
-  return betaTrackingMode === "ghost" ? 0.72 : 1;
+  return trackingMode === "ghost" ? 0.72 : 1;
 }
 
 function getLiveMarkerOpacity(tripId) {
-  if (betaTrackingMode === "scheduled") return 0;
+  if (trackingMode === "scheduled") return 0;
   if (selectedTripId && tripId !== selectedTripId) return 0;
   if (selectedStopId && !highlightedTripIds.has(tripId)) return 0.15;
   return 1;
@@ -1603,7 +1597,7 @@ function applyBetaMarkerVisibility() {
 
     const element = marker.getElement?.();
     if (element) {
-      element.style.pointerEvents = betaTrackingMode === "live" ? "none" : "auto";
+      element.style.pointerEvents = trackingMode === "live" ? "none" : "auto";
     }
   });
 
@@ -1613,11 +1607,13 @@ function applyBetaMarkerVisibility() {
 
     const element = marker.getElement?.();
     if (element) {
-      element.style.pointerEvents = betaTrackingMode === "scheduled" ? "none" : "auto";
+      element.style.pointerEvents = trackingMode === "scheduled" ? "none" : "auto";
     }
   });
 }
 
+
+// ---------- Selection highlighting and ETA chips ----------
 function clearRouteLine() {
   if (currentRouteLine) {
     map.removeLayer(currentRouteLine);
@@ -1786,7 +1782,7 @@ function focusTripsForStop(stopId, upcomingItems) {
 }
 
 function focusSingleTrip(tripId) {
-  selectedBusVariant = betaTrackingMode === "scheduled" ? "scheduled" : "live";
+  selectedBusVariant = trackingMode === "scheduled" ? "scheduled" : "live";
   focusSelectedBus(tripId, selectedBusVariant);
 }
 
@@ -1794,7 +1790,7 @@ function clearBusFocus() {
   clearActiveMapPinMarker();
   selectedTripId = null;
   selectedStopId = null;
-  selectedBusVariant = betaTrackingMode === "scheduled" ? "scheduled" : "live";
+  selectedBusVariant = trackingMode === "scheduled" ? "scheduled" : "live";
   highlightedTripIds = new Set();
 
   Object.keys(busMarkersByTripId).forEach(id => {
@@ -1842,6 +1838,8 @@ function formatMinutesAway(arrivalSeconds, currentSeconds) {
   return `${diffMinutes} mins`;
 }
 
+
+// ---------- Stop arrivals and user location ----------
 function getUpcomingForStop(stopId, minutesAhead = 30) {
   const currentSeconds = getCurrentSecondsPrecise();
   const maxSeconds = currentSeconds + minutesAhead * 60;
@@ -2092,6 +2090,8 @@ function applyTodayServiceFilter() {
   });
 }
 
+
+// ---------- Data loading ----------
 async function loadCoreData() {
   const [routesRes, tripsRes, shapesRes, timetableRes, stopUpcomingRes, calendarRes] = await Promise.all([
     fetch("data/processed/routes.json"),
@@ -2167,6 +2167,8 @@ async function loadStops() {
 }
 
 
+
+// ---------- Vehicle update loop ----------
 function getTripPositionNow(trip, currentSeconds) {
   if (!tripIsActiveAtSeconds(trip, currentSeconds)) {
     return null;
@@ -2314,7 +2316,6 @@ function updateBusPositionsLive() {
     drawEtaMarkersForTrip(selectedTripId);
   }
 
-  activeTripIdsGlobal = activeTripIds;
   updateNetworkLayer();
   applyBetaMarkerVisibility();
 
@@ -2348,6 +2349,8 @@ function refreshMapAfterInteraction() {
   }, MAP_SETTLE_REFRESH_DELAY_MS);
 }
 
+
+// ---------- Tracking mode controls and app events ----------
 function showLiveNoticeOnce() {
   if (!liveNoticeModal) return;
   if (localStorage.getItem(LIVE_NOTICE_SEEN_KEY) === "true") return;
@@ -2362,11 +2365,11 @@ function closeLiveNoticeModal() {
   liveNoticeModal.classList.add("is-hidden");
 }
 
-function setBetaTrackingMode(mode) {
-  betaTrackingMode = mode;
+function setTrackingMode(mode) {
+  trackingMode = mode;
 
-  betaModeButtons.forEach(button => {
-    button.classList.toggle("is-active", button.dataset.betaMode === mode);
+  trackingModeButtons.forEach(button => {
+    button.classList.toggle("is-active", button.dataset.trackingMode === mode);
   });
 
   if (mode === "scheduled") {
@@ -2391,13 +2394,13 @@ function setBetaTrackingMode(mode) {
   }
 }
 
-betaModeButtons.forEach(button => {
+trackingModeButtons.forEach(button => {
   button.addEventListener("click", event => {
     event.preventDefault();
     event.stopPropagation();
 
-    const selectedMode = button.dataset.betaMode;
-    setBetaTrackingMode(selectedMode);
+    const selectedMode = button.dataset.trackingMode;
+    setTrackingMode(selectedMode);
 
     if (selectedMode === "live") {
       showLiveNoticeOnce();
@@ -2475,6 +2478,8 @@ if (liveNoticeModal) {
   });
 }
 
+
+// ---------- App startup ----------
 async function init() {
   updateThemeToggleButton();
   hideSelectionPanel();
@@ -2486,7 +2491,7 @@ async function init() {
 
   map.invalidateSize();
   updateBusPositionsLive();
-  setBetaTrackingMode("scheduled");
+  setTrackingMode("scheduled");
   updateNetworkLayer();
 
   busUpdateTimerId = window.setInterval(() => {
