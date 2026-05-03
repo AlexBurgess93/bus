@@ -306,33 +306,70 @@ main {
   letter-spacing: -0.02em;
 }
 
-.route-card {
+.between-card {
   width: 100%;
   margin-top: auto;
   padding: 9px 11px;
   border-radius: 14px;
   background: #fff7ed;
   border: 1px solid #fed7aa;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+  overflow: hidden;
 }
 
-.route-stop {
-  font-size: 14px;
-  font-weight: 800;
-  line-height: 1.18;
+.between-label {
+  margin-bottom: 4px;
+  color: #9a3412;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.between-carousel {
+  width: 100%;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
+}
+
+.between-carousel-track {
+  --between-pan-distance: 0px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-width: max-content;
+  max-width: none;
+  white-space: nowrap;
   color: #111827;
-  white-space: normal;
-  overflow-wrap: anywhere;
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1.15;
+  transform: translateX(0);
 }
 
-.route-arrow {
-  font-size: 12px;
-  font-weight: 900;
-  color: #9ca3af;
-  line-height: 1;
-  text-align: center;
+.between-carousel.is-overflowing .between-carousel-track {
+  animation: betweenCarouselPan 7.5s ease-in-out 0.7s infinite alternate;
+}
+
+.between-stop {
+  display: inline-block;
+}
+
+.between-arrow-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  opacity: 0.78;
+}
+
+@keyframes betweenCarouselPan {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(calc(var(--between-pan-distance) * -1));
+  }
 }
 
 .bus-icon {
@@ -1624,7 +1661,7 @@ html[data-map-theme="dark"] .transport-filter-button,
 html[data-map-theme="dark"] .stop-routes-toggle,
 html[data-map-theme="dark"] .route-list-toggle,
 html[data-map-theme="dark"] .arrival-empty,
-html[data-map-theme="dark"] .route-card,
+html[data-map-theme="dark"] .between-card,
 html[data-map-theme="dark"] .pinned-preview span,
 html[data-map-theme="dark"] .stop-route-pill,
 html[data-map-theme="dark"] .stop-route-empty {
@@ -1850,15 +1887,20 @@ body.is-map-moving .vehicle-marker-icon {
 }
 
 
-html[data-map-theme="dark"] .route-card {
+html[data-map-theme="dark"] .between-card {
   background: rgba(39, 39, 42, 0.94);
   border-color: rgba(82, 82, 91, 0.9);
 }
 
-html[data-map-theme="dark"] .route-stop {
+html[data-map-theme="dark"] .between-label {
+  color: #fbbf24;
+}
+
+html[data-map-theme="dark"] .between-carousel-track {
   color: #f4f4f5;
 }
 
-html[data-map-theme="dark"] .route-arrow {
-  color: #a1a1aa;
+html[data-map-theme="dark"] .between-arrow-icon {
+  filter: brightness(0) invert(1);
+  opacity: 0.82;
 }

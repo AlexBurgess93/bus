@@ -865,16 +865,36 @@ function renderBusPanel(trip, variant = selectedBusVariant) {
         </div>
       </div>
 
-      <div class="route-card">
-        <div class="route-stop route-stop-from">${escapeHTML(fromStopName)}</div>
-        <div class="route-arrow">↓</div>
-        <div class="route-stop route-stop-to">${escapeHTML(toStopName)}</div>
+      <div class="between-card">
+        <div class="between-label">Between</div>
+        <div class="between-carousel" aria-label="Between ${escapeHTML(fromStopName)} and ${escapeHTML(toStopName)}">
+          <div class="between-carousel-track">
+            <span class="between-stop between-stop-from">${escapeHTML(fromStopName)}</span>
+            <img src="between_arrow.svg" alt="to" class="between-arrow-icon">
+            <span class="between-stop between-stop-to">${escapeHTML(toStopName)}</span>
+          </div>
+        </div>
       </div>
     </section>
   `;
 
+  applyBetweenCarouselIfNeeded();
   showMapPinForTrip(trip, variant);
   showSelectionPanel();
+}
+
+function applyBetweenCarouselIfNeeded() {
+  window.requestAnimationFrame(() => {
+    const carousel = selectionPanelContent.querySelector(".between-carousel");
+    const track = selectionPanelContent.querySelector(".between-carousel-track");
+
+    if (!carousel || !track) return;
+
+    const overflowDistance = Math.max(0, track.scrollWidth - carousel.clientWidth);
+
+    carousel.classList.toggle("is-overflowing", overflowDistance > 8);
+    track.style.setProperty("--between-pan-distance", `${overflowDistance}px`);
+  });
 }
 
 function getFutureStopIdsForTrips(tripIds) {
