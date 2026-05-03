@@ -1,7 +1,8 @@
 const perth = [-31.9523, 115.8613];
 
 const map = L.map("map", {
-  closePopupOnClick: false
+  closePopupOnClick: false,
+  preferCanvas: true
 }).setView(perth, 11);
 
 L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
@@ -48,6 +49,7 @@ let liveBusMarkersByTripId = {};
 let latestLiveTripPositionsByTripId = {};
 let ghostRouteSegmentLine = null;
 let selectedBusVariant = "live";
+let transportModeFilter = "all";
 
 const betaModeButtons = document.querySelectorAll(".beta-mode-button");
 
@@ -77,13 +79,65 @@ function showSelectionPanel() {
 
 function hideSelectionPanel() {
   selectionPanel.classList.remove("has-selection");
-  selectionPanelContent.innerHTML = `
-    <div class="panel-empty">
-      <div class="panel-empty-title">Tap a stop or bus</div>
-      <div class="panel-empty-subtitle">Details will appear here without shifting the map.</div>
-    </div>
-  `;
   selectedPanelType = null;
+  renderDefaultContextPanel();
+}
+
+function renderDefaultContextPanel() {
+  const filters = [
+    { value: "all", label: "All" },
+    { value: "bus", label: "Bus" },
+    { value: "train", label: "Train" },
+    { value: "ferry", label: "Ferry" }
+  ];
+
+  const filterHTML = filters.map(filter => `
+    <button
+      class="transport-filter-button ${filter.value === transportModeFilter ? "is-active" : ""}"
+      type="button"
+      data-transport-filter="${escapeHTML(filter.value)}"
+      aria-pressed="${filter.value === transportModeFilter ? "true" : "false"}"
+    >
+      ${escapeHTML(filter.label)}
+    </button>
+  `).join("");
+
+  selectionPanelContent.innerHTML = `
+    <section class="panel-section context-panel-section">
+      <div class="context-panel-header">
+        <div class="panel-text-stack">
+          <div class="panel-title">Explore services</div>
+          <div class="panel-subtitle">Filter the map, or tap a stop or service.</div>
+        </div>
+      </div>
+
+      <div class="transport-filter-strip" role="group" aria-label="Filter transport mode">
+        ${filterHTML}
+      </div>
+    </section>
+  `;
+
+  bindTransportFilterButtons();
+}
+
+function bindTransportFilterButtons() {
+  selectionPanelContent.querySelectorAll(".transport-filter-button").forEach(button => {
+    button.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      setTransportModeFilter(button.dataset.transportFilter || "all");
+    });
+  });
+}
+
+function setTransportModeFilter(mode) {
+  transportModeFilter = ["all", "bus", "train", "ferry"].includes(mode) ? mode : "all";
+
+  if (!selectedTripId && !selectedStopId) {
+    renderDefaultContextPanel();
+  }
+
+  updateBusPositionsLive();
 }
 
 function getTransportMode(item = {}) {
@@ -100,6 +154,32 @@ function getTransportMode(item = {}) {
   if (String(item.routeShortName ?? "").trim()) return "bus";
 
   return "transit";
+}
+
+function tripMatchesTransportFilter(trip = {}) {
+  if (transportModeFilter === "all") return true;
+  return getTransportMode(trip) === transportModeFilter;
+}
+
+function positionIsInsideExpandedViewport(position) {
+  if (!position) return false;
+  return map.getBounds().pad(0.22).contains(L.latLng(position[0], position[1]));
+}
+
+function shouldRenderTripMarkers(trip, scheduledPosition, livePosition) {
+  if (selectedTripId === trip.tripId) return true;
+  if (!tripMatchesTransportFilter(trip)) return false;
+
+  const zoom = map.getZoom();
+
+  // At city-wide zoom, keep the God-view lightweight: show the network,
+  // stops, and selected paths, but do not render every moving marker.
+  if (zoom < 12) return false;
+
+  return (
+    positionIsInsideExpandedViewport(scheduledPosition?.position) ||
+    positionIsInsideExpandedViewport(livePosition?.position)
+  );
 }
 
 function getTransportLabel(item = {}) {
@@ -1454,6 +1534,7 @@ function getTripPositionNow(trip, currentSeconds) {
 function updateBusPositionsLive() {
   const currentSeconds = getCurrentSecondsPrecise();
   const activeTripIds = new Set();
+  const visibleTripIds = new Set();
 
   timetableTrips.forEach(trip => {
     const scheduledPosition = getTripPositionNow(trip, currentSeconds);
@@ -1462,6 +1543,16 @@ function updateBusPositionsLive() {
 
     activeTripIds.add(trip.tripId);
     latestTripPositionsByTripId[trip.tripId] = scheduledPosition;
+
+    const delaySeconds = getStableLiveDelaySeconds(trip.tripId);
+    const livePosition = getTripPositionNow(trip, currentSeconds - delaySeconds) || scheduledPosition;
+    latestLiveTripPositionsByTripId[trip.tripId] = livePosition;
+
+    if (!shouldRenderTripMarkers(trip, scheduledPosition, livePosition)) {
+      return;
+    }
+
+    visibleTripIds.add(trip.tripId);
 
     if (busMarkersByTripId[trip.tripId]) {
       busMarkersByTripId[trip.tripId].setLatLng(scheduledPosition.position);
@@ -1482,9 +1573,6 @@ function updateBusPositionsLive() {
       busMarkersByTripId[trip.tripId] = marker;
     }
 
-    const delaySeconds = getStableLiveDelaySeconds(trip.tripId);
-    const livePosition = getTripPositionNow(trip, currentSeconds - delaySeconds) || scheduledPosition;
-    latestLiveTripPositionsByTripId[trip.tripId] = livePosition;
     const delayClass = getDelayStatus(delaySeconds).className;
 
     if (liveBusMarkersByTripId[trip.tripId]) {
@@ -1512,19 +1600,25 @@ function updateBusPositionsLive() {
   });
 
   Object.keys(busMarkersByTripId).forEach(tripId => {
-    if (!activeTripIds.has(tripId)) {
+    if (!visibleTripIds.has(tripId)) {
       map.removeLayer(busMarkersByTripId[tripId]);
       delete busMarkersByTripId[tripId];
-      delete latestTripPositionsByTripId[tripId];
     }
   });
 
   Object.keys(liveBusMarkersByTripId).forEach(tripId => {
-    if (!activeTripIds.has(tripId)) {
+    if (!visibleTripIds.has(tripId)) {
       map.removeLayer(liveBusMarkersByTripId[tripId]);
       delete liveBusMarkersByTripId[tripId];
-      delete latestLiveTripPositionsByTripId[tripId];
     }
+  });
+
+  Object.keys(latestTripPositionsByTripId).forEach(tripId => {
+    if (!activeTripIds.has(tripId)) delete latestTripPositionsByTripId[tripId];
+  });
+
+  Object.keys(latestLiveTripPositionsByTripId).forEach(tripId => {
+    if (!activeTripIds.has(tripId)) delete latestLiveTripPositionsByTripId[tripId];
   });
 
   if (selectedTripId) {
@@ -1599,6 +1693,12 @@ map.on("zoomend", () => {
   if (!selectedTripId && !selectedStopId) {
     applyDefaultStopMarkerStylesForZoom();
   }
+
+  updateBusPositionsLive();
+});
+
+map.on("moveend", () => {
+  updateBusPositionsLive();
 });
 
 map.on("click", () => {

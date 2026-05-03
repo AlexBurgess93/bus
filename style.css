@@ -816,3 +816,100 @@ main {
     display: none;
   }
 }
+
+/* Context-menu default state: transport filters live in the permanent bottom panel. */
+.context-panel-section {
+  justify-content: center;
+  gap: 10px;
+}
+
+.context-panel-header {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.transport-filter-strip {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 2px 8px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.transport-filter-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.transport-filter-button {
+  flex: 0 0 auto;
+  min-height: 40px;
+  min-width: 58px;
+  padding: 0 14px;
+  border: 1px solid #dbeafe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 950;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.transport-filter-button.is-active {
+  background: #111827;
+  border-color: #111827;
+  color: #ffffff;
+}
+
+.transport-filter-button:active {
+  transform: scale(0.97);
+}
+
+/* Reposition tracking controls to the top-right, aligned above GPS. */
+.beta-mode-control {
+  top: calc(env(safe-area-inset-top, 0px) + 14px);
+  right: 14px;
+  bottom: auto;
+  max-width: min(330px, calc(100vw - 28px));
+}
+
+.locate-button {
+  top: calc(env(safe-area-inset-top, 0px) + 106px);
+  right: 14px;
+}
+
+@media (max-width: 640px) {
+  .beta-mode-control {
+    top: calc(env(safe-area-inset-top, 0px) + 10px);
+    right: 10px;
+    bottom: auto;
+    padding: 8px;
+    border-radius: 16px;
+  }
+
+  .beta-segmented-control {
+    gap: 4px;
+  }
+
+  .beta-mode-button {
+    min-height: 34px;
+    padding: 7px 9px;
+    font-size: 11px;
+  }
+
+  .locate-button {
+    top: calc(env(safe-area-inset-top, 0px) + 96px);
+    right: 10px;
+  }
+
+  .transport-filter-button {
+    min-height: 38px;
+    min-width: 54px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+}
