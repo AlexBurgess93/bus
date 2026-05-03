@@ -378,8 +378,8 @@ function createMapPinIcon(label = "Pin", isPinned = false) {
       </button>
     `,
     iconSize: [34, 34],
-    // Anchor lower than the icon so the control floats above the selected marker instead of covering it.
-    iconAnchor: [17, 64]
+    // Keep the pin control below the selected stop dot so planning buttons can sit above it.
+    iconAnchor: [17, -12]
   });
 }
 
@@ -550,6 +550,8 @@ function positionIsInsideExpandedViewport(position) {
 }
 
 function shouldRenderTripMarkers(trip, scheduledPosition, livePosition) {
+  if (selectedJourneyOptionTripId) return trip.tripId === selectedJourneyOptionTripId;
+  if (latestJourneyOptions.length) return latestJourneyOptions.some(option => option.tripId === trip.tripId);
   if (selectedTripId === trip.tripId) return true;
   if (!tripMatchesMapFilters(trip)) return false;
 
@@ -1315,7 +1317,7 @@ function updateNetworkLayer() {
 
   // The network layer is for wide/mid zoom. Once the user is close enough,
   // detailed markers, stop dots, and selected route paths take over.
-  if (selectedTripId || selectedStopId || zoom > NETWORK_LAYER_MAX_ZOOM) {
+  if (selectedTripId || selectedStopId || journeyStart || journeyEnd || journeyPickMode || latestJourneyOptions.length || zoom > NETWORK_LAYER_MAX_ZOOM) {
     clearNetworkLayer();
     return;
   }
@@ -1590,6 +1592,7 @@ function setJourneyStartFromStop(stop) {
   journeyPickMode = null;
   hideStopMapAction();
   renderJourneyOverlay();
+  highlightJourneyMarkers();
 
   if (journeyEnd) {
     showJourneyOptions();
@@ -1701,9 +1704,11 @@ function clearJourneyPlan() {
   journeyPickMode = null;
   selectedJourneyOptionTripId = null;
   latestJourneyOptions = [];
+  highlightedTripIds = new Set();
   clearJourneyRouteLines();
   hideStopMapAction();
   renderJourneyOverlay();
+  updateBusPositionsLive();
 }
 
 function findDirectJourneyOptions(originStopId, destinationStopId) {
@@ -1853,6 +1858,25 @@ function drawJourneyStopTimeLabels(option) {
   });
 }
 
+
+function drawJourneyVehicleLabel(option, latLng) {
+  if (!option || !latLng) return;
+
+  const colour = getJourneyDelayColour(option);
+  const marker = L.marker(latLng, {
+    interactive: false,
+    zIndexOffset: 1700,
+    icon: L.divIcon({
+      className: "",
+      html: `<div class="journey-vehicle-label" style="--journey-label-colour:${escapeHTML(colour)}">${escapeHTML(option.routeLabel)}</div>`,
+      iconSize: [54, 34],
+      iconAnchor: [27, 42]
+    })
+  }).addTo(map);
+
+  journeyStopTimeMarkers.push(marker);
+}
+
 function drawJourneyOptionPreview(option) {
   const shapeCoords = allShapes[option.shapeId];
   const startStop = stopLookup[getJourneyStartStopId()];
@@ -1971,6 +1995,7 @@ function drawSelectedJourneyOption(option) {
   const busLatLng = getJourneyOptionLiveLatLng(option);
 
   if (busLatLng) {
+    drawJourneyVehicleLabel(option, busLatLng);
     const approachSegment = getShapeSegmentToStop(shapeCoords, busLatLng, startStop);
 
     if (approachSegment.length >= 2) {
@@ -2008,6 +2033,7 @@ function selectJourneyOption(tripId) {
   selectedTripId = null;
   selectedStopId = null;
 
+  updateBusPositionsLive();
   drawSelectedJourneyOption(option);
   highlightJourneyMarkers();
   renderJourneyResultsPanel(latestJourneyOptions);
@@ -2122,6 +2148,7 @@ function showJourneyOptions() {
   selectedStopId = null;
 
   drawJourneyOptionPaths(options);
+  updateBusPositionsLive();
   highlightJourneyMarkers();
   fitJourneyBounds(options);
   renderJourneyResultsPanel(options);
@@ -2855,21 +2882,21 @@ function requestUserLocation(options = {}) {
 
       updateUserLocationMarker(lat, lon);
 
-      if (nearestStop) {
+      if (nearestStop && (options.useAsJourneyStart || journeyEnd || journeyPickMode === "start")) {
         journeyStart = {
           type: "gps",
           lat,
           lon,
           nearestStopId: nearestStop.id
         };
-        if (journeyPickMode === "start") journeyPickMode = null;
-        renderJourneyOverlay();
-      }
-
-      if (nearestStop && (options.useAsJourneyStart || journeyEnd)) {
         journeyPickMode = null;
-        showJourneyOptions();
-        return;
+        renderJourneyOverlay();
+        highlightJourneyMarkers();
+
+        if (journeyEnd) {
+          showJourneyOptions();
+          return;
+        }
       }
 
       focusUserLocation(lat, lon);

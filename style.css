@@ -2345,8 +2345,8 @@ html[data-map-theme="dark"] .journey-stop-time-marker span {
 }
 
 .journey-field-dot-end {
-  background: #2563eb;
-  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14);
+  background: #8b5cf6;
+  box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.14);
 }
 
 .journey-field-text {
@@ -2469,7 +2469,7 @@ html[data-map-theme="dark"] .journey-stop-time-marker span {
   }
 
   .journey-overlay.is-peeking {
-    transform: translateY(calc(100% - 26px));
+    transform: translateY(calc(100% - 22px));
   }
 
   .journey-field {
@@ -2554,4 +2554,25 @@ html[data-map-theme="dark"] .stop-map-action-secondary {
   background: rgba(30, 41, 59, 0.98);
   border-color: rgba(59, 130, 246, 0.65);
   color: #bfdbfe;
+}
+
+
+.journey-vehicle-label {
+  min-width: 42px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 3px solid #ffffff;
+  background: var(--journey-label-colour, #2563eb);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 950;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.28);
+}
+
+html[data-map-theme="dark"] .journey-vehicle-label {
+  border-color: #18181b;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.38);
 }
