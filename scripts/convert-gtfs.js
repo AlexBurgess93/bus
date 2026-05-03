@@ -23,6 +23,12 @@ const TARGET_ROUTES = [
   "940"
 ];
 
+// Optional override when generating test data:
+// SERVICE_DATE=20260503 node scripts/convert-gtfs.js
+// SERVICE_DATE=2026-05-03 node scripts/convert-gtfs.js
+const SERVICE_TIME_ZONE = "Australia/Perth";
+const TARGET_SERVICE_DATE = getTargetServiceDateString();
+
 function parseCSVLine(line) {
   const result = [];
   let current = "";
@@ -54,6 +60,106 @@ function readGTFSFile(filename) {
   const rows = lines.slice(1).map(line => parseCSVLine(line));
 
   return { headers, rows };
+}
+
+function getTargetServiceDateString() {
+  const envDate = process.env.SERVICE_DATE;
+
+  if (envDate) {
+    const cleaned = envDate.replace(/-/g, "");
+
+    if (!/^\d{8}$/.test(cleaned)) {
+      throw new Error("SERVICE_DATE must be YYYYMMDD or YYYY-MM-DD");
+    }
+
+    return cleaned;
+  }
+
+  const formatter = new Intl.DateTimeFormat("en-AU", {
+    timeZone: SERVICE_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  });
+
+  const parts = formatter.formatToParts(new Date());
+  const year = parts.find(part => part.type === "year").value;
+  const month = parts.find(part => part.type === "month").value;
+  const day = parts.find(part => part.type === "day").value;
+
+  return `${year}${month}${day}`;
+}
+
+function getDayFieldForGTFSDate(gtfsDateString) {
+  const year = Number(gtfsDateString.slice(0, 4));
+  const monthIndex = Number(gtfsDateString.slice(4, 6)) - 1;
+  const day = Number(gtfsDateString.slice(6, 8));
+  const date = new Date(Date.UTC(year, monthIndex, day));
+
+  const dayFields = [
+    "sunday",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday"
+  ];
+
+  return dayFields[date.getUTCDay()];
+}
+
+function getActiveServiceIdsForTargetDate() {
+  const calendarPath = path.join(rawDir, "calendar.txt");
+
+  if (!fs.existsSync(calendarPath)) {
+    console.warn("calendar.txt not found. Continuing without service-day filtering.");
+    return null;
+  }
+
+  const { headers, rows } = readGTFSFile("calendar.txt");
+
+  const serviceIdIndex = headers.indexOf("service_id");
+  const startDateIndex = headers.indexOf("start_date");
+  const endDateIndex = headers.indexOf("end_date");
+  const targetDayField = getDayFieldForGTFSDate(TARGET_SERVICE_DATE);
+  const targetDayIndex = headers.indexOf(targetDayField);
+
+  if (
+    serviceIdIndex === -1 ||
+    startDateIndex === -1 ||
+    endDateIndex === -1 ||
+    targetDayIndex === -1
+  ) {
+    throw new Error("calendar.txt is missing required GTFS calendar columns.");
+  }
+
+  const targetDateNumber = Number(TARGET_SERVICE_DATE);
+  const activeServiceIds = new Set();
+
+  rows.forEach(cols => {
+    const serviceId = cols[serviceIdIndex];
+    const runsOnTargetDay = cols[targetDayIndex] === "1";
+    const startDate = Number(cols[startDateIndex]);
+    const endDate = Number(cols[endDateIndex]);
+    const insideDateRange = targetDateNumber >= startDate && targetDateNumber <= endDate;
+
+    if (serviceId && runsOnTargetDay && insideDateRange) {
+      activeServiceIds.add(serviceId);
+    }
+  });
+
+  console.log(`Target service date: ${TARGET_SERVICE_DATE} (${targetDayField})`);
+  console.log(`Active service IDs: ${activeServiceIds.size}`);
+
+  return activeServiceIds;
+}
+
+const ACTIVE_SERVICE_IDS = getActiveServiceIdsForTargetDate();
+
+function serviceIsActive(serviceId) {
+  if (!ACTIVE_SERVICE_IDS) return true;
+  return ACTIVE_SERVICE_IDS.has(serviceId);
 }
 
 function convertStops() {
@@ -163,9 +269,13 @@ function convertTrips() {
   const trips = [];
 
   rows.forEach(cols => {
+    const serviceId = cols[serviceIdIndex];
+
+    if (!serviceIsActive(serviceId)) return;
+
     trips.push({
       routeId: cols[routeIdIndex],
-      serviceId: cols[serviceIdIndex],
+      serviceId,
       tripId: cols[tripIdIndex],
       headsign: cols[headsignIndex],
       shapeId: cols[shapeIdIndex]
@@ -177,7 +287,7 @@ function convertTrips() {
     JSON.stringify(trips)
   );
 
-  console.log(`Converted ${trips.length} trips`);
+  console.log(`Converted ${trips.length} active-day trips`);
 }
 
 function convertStopRoutes() {
@@ -190,6 +300,7 @@ function convertStopRoutes() {
 
   const tripIdIndex = tripsData.headers.indexOf("trip_id");
   const tripRouteIdIndex = tripsData.headers.indexOf("route_id");
+  const tripServiceIdIndex = tripsData.headers.indexOf("service_id");
 
   const stopTimesTripIdIndex = stopTimesData.headers.indexOf("trip_id");
   const stopIdIndex = stopTimesData.headers.indexOf("stop_id");
@@ -203,7 +314,13 @@ function convertStopRoutes() {
   tripsData.rows.forEach(cols => {
     const tripId = cols[tripIdIndex];
     const routeId = cols[tripRouteIdIndex];
-    tripIdToRouteShortName[tripId] = routeIdToShortName[routeId];
+    const serviceId = cols[tripServiceIdIndex];
+    const routeShortName = routeIdToShortName[routeId];
+
+    if (!serviceIsActive(serviceId)) return;
+    if (!TARGET_ROUTES.includes(routeShortName)) return;
+
+    tripIdToRouteShortName[tripId] = routeShortName;
   });
 
   const stopRoutes = {};
@@ -243,7 +360,7 @@ function convertStopRoutes() {
   );
 
   console.log(
-    `Converted route lists for ${Object.keys(cleanStopRoutes).length} stops`
+    `Converted active-day route lists for ${Object.keys(cleanStopRoutes).length} stops`
   );
 }
 
@@ -282,13 +399,14 @@ function convertTripStopTimes() {
   tripsData.rows.forEach(cols => {
     const tripId = cols[tripsTripIdIndex];
     const routeId = cols[tripsRouteIdIndex];
+    const serviceId = cols[tripsServiceIdIndex];
     const route = routeIdToRoute[routeId];
 
     if (!route) return;
+    if (!serviceIsActive(serviceId)) return;
 
     const routeShortName = route.shortName;
 
-    // This is the important filter.
     // Only trips for MVP routes get included in trip-stop-times.json.
     if (!TARGET_ROUTES.includes(routeShortName)) return;
 
@@ -297,7 +415,7 @@ function convertTripStopTimes() {
       routeId,
       routeShortName,
       routeLongName: route.longName,
-      serviceId: cols[tripsServiceIdIndex],
+      serviceId,
       headsign: cols[tripsHeadsignIndex],
       shapeId: cols[tripsShapeIdIndex],
       stops: []
@@ -329,7 +447,7 @@ function convertTripStopTimes() {
     JSON.stringify(trips)
   );
 
-  console.log(`Converted stop times for ${trips.length} trips`);
+  console.log(`Converted active-day stop times for ${trips.length} trips`);
 }
 
 function convertUpcomingStopTrips() {
@@ -370,7 +488,7 @@ function convertUpcomingStopTrips() {
     JSON.stringify(stopUpcoming)
   );
 
-  console.log(`Converted upcoming trip lookup for ${Object.keys(stopUpcoming).length} stops`);
+  console.log(`Converted active-day upcoming trip lookup for ${Object.keys(stopUpcoming).length} stops`);
 }
 
 function timeStringToSeconds(timeString) {
