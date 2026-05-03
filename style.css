@@ -645,6 +645,67 @@ main {
   box-shadow: 0 1px 4px rgba(15, 23, 42, 0.18);
 }
 
+
+.route-bus-marker.transport-train .route-bus-badge,
+.route-bus-marker.transport-ferry .route-bus-badge,
+.route-bus-marker.transport-tram .route-bus-badge,
+.route-bus-marker.transport-subway .route-bus-badge,
+.route-bus-marker.transport-transit .route-bus-badge {
+  min-width: 32px;
+  padding: 0;
+  font-size: 15px;
+  letter-spacing: 0;
+}
+
+.route-bus-marker.transport-train.live .route-bus-badge,
+.route-bus-marker.transport-ferry.live .route-bus-badge,
+.route-bus-marker.transport-tram.live .route-bus-badge,
+.route-bus-marker.transport-subway.live .route-bus-badge,
+.route-bus-marker.transport-transit.live .route-bus-badge {
+  min-width: 38px;
+  height: 38px;
+  font-size: 17px;
+}
+
+.route-bus-marker.transport-train.live .route-bus-badge,
+.route-bus-marker.transport-train.scheduled .route-bus-badge {
+  border-color: #7c3aed;
+  color: #5b21b6;
+}
+
+.route-bus-marker.transport-ferry.live .route-bus-badge,
+.route-bus-marker.transport-ferry.scheduled .route-bus-badge {
+  border-color: #0284c7;
+  color: #0369a1;
+}
+
+.route-bus-marker.transport-tram.live .route-bus-badge,
+.route-bus-marker.transport-tram.scheduled .route-bus-badge,
+.route-bus-marker.transport-subway.live .route-bus-badge,
+.route-bus-marker.transport-subway.scheduled .route-bus-badge {
+  border-color: #0891b2;
+  color: #0e7490;
+}
+
+.route-badge-train,
+.route-badge-ferry,
+.route-badge-tram,
+.route-badge-subway,
+.route-badge-transit {
+  font-size: 18px;
+  letter-spacing: 0;
+}
+
+.arrival-route-train,
+.arrival-route-ferry,
+.arrival-route-tram,
+.arrival-route-subway,
+.arrival-route-transit {
+  min-width: 30px;
+  font-size: 14px;
+  padding: 3px 6px;
+}
+
 @keyframes live-bus-pulse {
   0% {
     transform: scale(0.72);

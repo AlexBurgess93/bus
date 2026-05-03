@@ -202,13 +202,15 @@ function getRouteLookup() {
   const routeIdIndex = routesData.headers.indexOf("route_id");
   const shortNameIndex = routesData.headers.indexOf("route_short_name");
   const longNameIndex = routesData.headers.indexOf("route_long_name");
+  const routeTypeIndex = routesData.headers.indexOf("route_type");
 
   const lookup = {};
 
   routesData.rows.forEach(cols => {
     lookup[cols[routeIdIndex]] = {
       shortName: cols[shortNameIndex],
-      longName: cols[longNameIndex]
+      longName: cols[longNameIndex],
+      routeType: routeTypeIndex >= 0 ? cols[routeTypeIndex] : ""
     };
   });
 
@@ -221,11 +223,13 @@ function convertRoutes() {
   const routeIdIndex = headers.indexOf("route_id");
   const shortNameIndex = headers.indexOf("route_short_name");
   const longNameIndex = headers.indexOf("route_long_name");
+  const routeTypeIndex = headers.indexOf("route_type");
 
   const routes = rows.map(cols => ({
     id: cols[routeIdIndex],
     shortName: cols[shortNameIndex],
-    longName: cols[longNameIndex]
+    longName: cols[longNameIndex],
+    routeType: routeTypeIndex >= 0 ? cols[routeTypeIndex] : ""
   }));
 
   writeJSON("routes.json", routes);
@@ -261,6 +265,7 @@ function getActiveTripLookup(activeServiceIds) {
       tripId,
       routeShortName: route.shortName,
       routeLongName: route.longName,
+      routeType: route.routeType,
       headsign: cols[headsignIndex],
       shapeId: cols[shapeIdIndex],
       stops: []
@@ -276,6 +281,9 @@ function convertTrips(activeTripLookup) {
     routeId: trip.routeId,
     serviceId: trip.serviceId,
     tripId: trip.tripId,
+    routeShortName: trip.routeShortName,
+    routeLongName: trip.routeLongName,
+    routeType: trip.routeType,
     headsign: trip.headsign,
     shapeId: trip.shapeId
   }));
@@ -372,6 +380,7 @@ function convertUpcomingStopTrips() {
         tripId: trip.tripId,
         routeShortName: trip.routeShortName,
         routeLongName: trip.routeLongName,
+        routeType: trip.routeType,
         serviceId: trip.serviceId,
         headsign: trip.headsign,
         shapeId: trip.shapeId,

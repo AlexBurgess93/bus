@@ -86,6 +86,48 @@ function hideSelectionPanel() {
   selectedPanelType = null;
 }
 
+function getTransportMode(item = {}) {
+  const routeType = String(item.routeType ?? "").trim();
+
+  if (routeType === "2") return "train";
+  if (routeType === "4") return "ferry";
+  if (routeType === "0") return "tram";
+  if (routeType === "1") return "subway";
+  if (routeType === "3") return "bus";
+
+  // Fallback for older processed data that does not have routeType yet.
+  // If there is a route number, treat it as a bus. Otherwise use a generic transit icon.
+  if (String(item.routeShortName ?? "").trim()) return "bus";
+
+  return "transit";
+}
+
+function getTransportLabel(item = {}) {
+  const mode = getTransportMode(item);
+  const routeShortName = String(item.routeShortName ?? "").trim();
+
+  if (mode === "bus") return routeShortName || "BUS";
+  if (mode === "train") return "🚆";
+  if (mode === "ferry") return "⛴️";
+  if (mode === "tram") return "🚋";
+  if (mode === "subway") return "🚇";
+
+  return "•";
+}
+
+function getTransportAriaLabel(item = {}) {
+  const mode = getTransportMode(item);
+  const label = getTransportLabel(item);
+  const routeLongName = String(item.routeLongName ?? "").trim();
+  const headsign = String(item.headsign ?? "").trim();
+
+  if (mode === "bus") {
+    return `bus route ${label}${headsign ? ` to ${headsign}` : ""}`;
+  }
+
+  return `${mode}${routeLongName ? ` ${routeLongName}` : ""}${headsign ? ` to ${headsign}` : ""}`;
+}
+
 function renderStopPanel(stop, upcomingItems) {
   selectedPanelType = "stop";
 
@@ -102,9 +144,9 @@ function renderStopPanel(stop, upcomingItems) {
             type="button"
             data-shape-id="${escapeHTML(item.shapeId)}"
             data-trip-id="${escapeHTML(item.tripId)}"
-            aria-label="Select route ${escapeHTML(item.routeShortName)} to ${escapeHTML(item.headsign)}, ${escapeHTML(minsAway)} away"
+            aria-label="Select ${escapeHTML(getTransportAriaLabel(item))}, ${escapeHTML(minsAway)} away"
           >
-            <span class="arrival-route">${escapeHTML(item.routeShortName)}</span>
+            <span class="arrival-route ${escapeHTML(`arrival-route-${getTransportMode(item)}`)}">${escapeHTML(getTransportLabel(item))}</span>
             <span class="arrival-time">${escapeHTML(minsAway)}</span>
             <span class="arrival-destination">${escapeHTML(item.headsign)}</span>
           </button>
@@ -306,7 +348,7 @@ function renderBusPanel(trip, variant = selectedBusVariant) {
   selectionPanelContent.innerHTML = `
     <section class="panel-section bus-panel-section">
       <div class="bus-summary-row">
-        <div class="route-badge">${escapeHTML(trip.routeShortName)}</div>
+        <div class="route-badge route-badge-${escapeHTML(getTransportMode(trip))}">${escapeHTML(getTransportLabel(trip))}</div>
 
         <div class="panel-text-stack">
           <div class="panel-subtitle">${escapeHTML(variantLabel)}</div>
@@ -837,8 +879,14 @@ function interpolateAlongShape(shapeCoords, stopA, stopB, progress) {
 }
 
 function createBusIcon(trip, isSelected = false, variant = "scheduled", delayClass = "on-time") {
-  const routeNumber = escapeHTML(trip?.routeShortName || "?");
-  const classes = ["route-bus-marker", variant === "live" ? "live" : "scheduled"];
+  const mode = getTransportMode(trip);
+  const markerLabel = escapeHTML(getTransportLabel(trip));
+  const ariaLabel = escapeHTML(getTransportAriaLabel(trip));
+  const classes = [
+    "route-bus-marker",
+    `transport-${mode}`,
+    variant === "live" ? "live" : "scheduled"
+  ];
 
   if (isSelected) classes.push("selected");
   if (variant === "live") classes.push(delayClass);
@@ -849,9 +897,9 @@ function createBusIcon(trip, isSelected = false, variant = "scheduled", delayCla
   return L.divIcon({
     className: "",
     html: `
-      <div class="${classes.join(" ")}" aria-label="${variant} route ${routeNumber}">
+      <div class="${classes.join(" ")}" aria-label="${variant} ${ariaLabel}">
         ${variant === "live" ? `<span class="route-bus-pulse"></span>` : ""}
-        <span class="route-bus-badge">${routeNumber}</span>
+        <span class="route-bus-badge">${markerLabel}</span>
         ${variant === "scheduled" ? `<span class="route-bus-scheduled-dot" aria-hidden="true"></span>` : ""}
       </div>
     `,
@@ -1081,7 +1129,7 @@ function getUpcomingForStop(stopId, minutesAhead = 30) {
 
     const duplicateIndex = deduped.findIndex(existing => {
       const existingArrivalSeconds = timeToSeconds(existing.arrivalTime);
-      const sameRoute = existing.routeShortName === item.routeShortName;
+      const sameRoute = getTransportLabel(existing) === getTransportLabel(item) && getTransportMode(existing) === getTransportMode(item);
       const sameDestination = existing.headsign === item.headsign;
       const sameShape = existing.shapeId === item.shapeId;
       const closeArrival = Math.abs(existingArrivalSeconds - arrivalSeconds) <= duplicateWindowSeconds;
