@@ -66,6 +66,7 @@ let pinnedStopIds = new Set();
 let pinnedViewEnabled = false;
 let activeMapPinMarker = null;
 let tripLookupByTripId = {};
+let etaMarkers = [];
 
 const betaModeButtons = document.querySelectorAll(".beta-mode-button");
 
@@ -1482,6 +1483,81 @@ function drawSpecificTripShape(trip) {
   drawTripShapeByShapeId(trip.shapeId);
 }
 
+function clearEtaMarkers() {
+  etaMarkers.forEach(marker => {
+    map.removeLayer(marker);
+  });
+
+  etaMarkers = [];
+}
+
+function formatScheduledClockTime(timeString) {
+  const seconds = timeToSeconds(timeString);
+
+  if (Number.isNaN(seconds)) return "";
+
+  const daySeconds = ((seconds % 86400) + 86400) % 86400;
+  const hours = Math.floor(daySeconds / 3600);
+  const minutes = Math.floor((daySeconds % 3600) / 60);
+
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function getEtaText(arrivalSeconds, currentSeconds) {
+  const diffSeconds = arrivalSeconds - currentSeconds;
+  const diffMinutes = Math.round(diffSeconds / 60);
+
+  if (diffMinutes <= 0) return "now";
+  if (diffMinutes < 60) return `${diffMinutes}m`;
+
+  const hours = Math.floor(diffMinutes / 60);
+  const minutes = diffMinutes % 60;
+
+  return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
+}
+
+function drawEtaMarkersForTrip(tripId) {
+  clearEtaMarkers();
+
+  const trip = tripLookupByTripId[tripId] || timetableTrips.find(item => item.tripId === tripId);
+
+  if (!trip || !trip.stops || trip.stops.length === 0) return;
+
+  const currentSeconds = getCurrentSecondsPrecise();
+  const futureStops = trip.stops
+    .filter(stopTime => {
+      const arrivalSeconds = timeToSeconds(stopTime.arrivalTime);
+      return !Number.isNaN(arrivalSeconds) && arrivalSeconds >= currentSeconds;
+    })
+    .slice(0, 12);
+
+  futureStops.forEach((stopTime, index) => {
+    const stop = stopLookup[stopTime.stopId];
+    if (!stop) return;
+
+    const arrivalSeconds = timeToSeconds(stopTime.arrivalTime);
+    const etaText = getEtaText(arrivalSeconds, currentSeconds);
+    const scheduledClock = formatScheduledClockTime(stopTime.arrivalTime);
+
+    const marker = L.marker([stop.lat, stop.lon], {
+      icon: L.divIcon({
+        className: "",
+        html: `
+          <div class="eta-chip ${index === 0 ? "is-next" : ""}" title="Scheduled ${escapeHTML(scheduledClock)}">
+            <span class="eta-chip-time">${escapeHTML(etaText)}</span>
+          </div>
+        `,
+        iconSize: [46, 24],
+        iconAnchor: [23, 38]
+      }),
+      interactive: false,
+      zIndexOffset: 1450
+    }).addTo(map);
+
+    etaMarkers.push(marker);
+  });
+}
+
 function focusSelectedBus(tripId, variant = selectedBusVariant) {
   selectedTripId = tripId;
   selectedStopId = null;
@@ -1510,6 +1586,7 @@ function focusSelectedBus(tripId, variant = selectedBusVariant) {
 
   applyBetaMarkerVisibility();
   drawGhostRouteSegmentForTrip(tripId);
+  drawEtaMarkersForTrip(tripId);
 
   if (currentRouteLine) {
     currentRouteLine.setStyle({
@@ -1568,6 +1645,7 @@ function clearBusFocus() {
 
   applyBetaMarkerVisibility();
   clearRouteLine();
+  clearEtaMarkers();
   clearStopRouteLines();
   resetStopMarkerStyles();
 }
@@ -2052,6 +2130,7 @@ function updateBusPositionsLive() {
 
   if (selectedTripId) {
     drawGhostRouteSegmentForTrip(selectedTripId);
+    drawEtaMarkersForTrip(selectedTripId);
   }
 
   activeTripIdsGlobal = activeTripIds;

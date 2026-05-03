@@ -1189,3 +1189,47 @@ main {
   color: #9a3412;
   box-shadow: 0 4px 12px rgba(249, 115, 22, 0.16);
 }
+
+
+/* Selected-trip ETA chips shown above future stops. */
+.eta-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 21px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.9);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.24);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.eta-chip.is-next {
+  background: #f59e0b;
+  color: #111827;
+  border-color: rgba(146, 64, 14, 0.38);
+  box-shadow: 0 5px 14px rgba(245, 158, 11, 0.35);
+}
+
+.eta-chip-time {
+  display: block;
+  letter-spacing: -0.02em;
+}
+
+@media (max-width: 640px) {
+  .eta-chip {
+    min-width: 30px;
+    height: 19px;
+    padding: 0 7px;
+    font-size: 10px;
+  }
+}
