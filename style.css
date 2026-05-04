@@ -3426,3 +3426,72 @@ html[data-map-theme="dark"] .ghost-network-delay-line {
 html[data-map-theme="dark"] .service-callout-connector line {
   stroke: rgba(248, 250, 252, 0.52);
 }
+
+/* Render safety patch: vehicle badges only at closest zooms, no connector lines. */
+.service-callout-marker {
+  position: relative;
+  width: 56px !important;
+  height: 48px !important;
+  transform: translateZ(0);
+}
+
+.service-callout-dot {
+  position: absolute;
+  left: 28px !important;
+  top: 34px !important;
+  width: 10px !important;
+  height: 10px !important;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background: #6b7280;
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.28);
+  z-index: 2;
+}
+
+.service-callout-connector,
+.service-callout-connector line,
+.service-callout-line {
+  display: none !important;
+}
+
+.service-callout-chip {
+  position: absolute;
+  left: calc(28px + var(--label-x)) !important;
+  top: calc(34px + var(--label-y)) !important;
+  transform: translate(-50%, -50%);
+  min-width: 28px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  color: #111827;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: -0.03em;
+  box-shadow: 0 5px 15px rgba(15, 23, 42, 0.18);
+  z-index: 3;
+  white-space: nowrap;
+}
+
+.service-callout-chip::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 9px;
+  height: 9px;
+  background: inherit;
+  border-right: 1px solid rgba(15, 23, 42, 0.18);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.18);
+  transform: translateX(-50%) rotate(45deg);
+  z-index: -1;
+}
+
+html[data-map-theme="dark"] .service-callout-chip::after {
+  border-color: rgba(255, 255, 255, 0.18);
+}

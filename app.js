@@ -31,8 +31,8 @@ if (!mapTileLayers[currentMapTheme]) {
 mapTileLayers[currentMapTheme].addTo(map);
 document.documentElement.dataset.mapTheme = currentMapTheme;
 
-const STOP_DOTS_MIN_ZOOM = 15;
-const DETAILED_MARKER_MIN_ZOOM = 14;
+const STOP_DOTS_MIN_ZOOM = 18;
+const DETAILED_MARKER_MIN_ZOOM = 17;
 const SERVICE_DOTS_MIN_ZOOM = 10;
 const NETWORK_LAYER_MAX_ZOOM = 14;
 
@@ -4018,12 +4018,11 @@ function getMarkerLabelOffset(trip = {}, variant = "live") {
   }
 
   const slots = [
-    { x: -24, y: -20 },
-    { x: 24, y: -20 },
-    { x: -30, y: 0 },
-    { x: 30, y: 0 },
-    { x: -22, y: 20 },
-    { x: 22, y: 20 }
+    { x: 0, y: -22 },
+    { x: -8, y: -22 },
+    { x: 8, y: -22 },
+    { x: -4, y: -24 },
+    { x: 4, y: -24 }
   ];
 
   return slots[Math.abs(hash) % slots.length];
@@ -4061,24 +4060,16 @@ function createBusIcon(trip, isSelected = false, variant = "scheduled", delayCla
 
     if (variant === "live") calloutClasses.push(delayClass);
 
-    const originX = 42;
-    const originY = 30;
-    const chipX = originX + offset.x;
-    const chipY = originY + offset.y;
-
     return L.divIcon({
       className: "vehicle-marker-icon",
       html: `
         <div class="${calloutClasses.join(" ")}" style="--label-x:${offset.x}px; --label-y:${offset.y}px" aria-label="${variant} ${ariaLabel}">
-          <svg class="service-callout-connector" viewBox="0 0 84 60" aria-hidden="true" focusable="false">
-            <line x1="${originX}" y1="${originY}" x2="${chipX}" y2="${chipY}" />
-          </svg>
           <span class="service-callout-dot"></span>
           <span class="service-callout-chip">${markerLabel}</span>
         </div>
       `,
-      iconSize: [84, 60],
-      iconAnchor: [42, 30]
+      iconSize: [56, 48],
+      iconAnchor: [28, 34]
     });
   }
 
