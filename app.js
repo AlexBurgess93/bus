@@ -714,17 +714,28 @@ function setTransportModeFilter(mode) {
 }
 
 function getTransportMode(item = {}) {
-  const routeType = String(item.routeType ?? "").trim();
+  const routeTypeRaw = String(item.routeType ?? "").trim();
+  const routeType = Number(routeTypeRaw);
+  const shortName = String(item.routeShortName ?? "").trim();
+  const longName = String(item.routeLongName ?? "").trim();
+  const headsign = String(item.headsign ?? "").trim();
+  const haystack = `${shortName} ${longName} ${headsign}`.toLowerCase();
 
-  if (routeType === "2") return "train";
-  if (routeType === "4") return "ferry";
-  if (routeType === "0") return "tram";
-  if (routeType === "1") return "subway";
-  if (routeType === "3") return "bus";
+  // Standard GTFS route_type values, plus common extended GTFS route types.
+  // 2 = rail, 4 = ferry, 3 = bus. Extended: 100-199 rail, 700-799 bus, 1000-1099 water/ferry.
+  if (routeTypeRaw) {
+    if (routeType === 2 || (routeType >= 100 && routeType < 200)) return "train";
+    if (routeType === 4 || (routeType >= 1000 && routeType < 1100)) return "ferry";
+    if (routeType === 0 || (routeType >= 900 && routeType < 1000)) return "tram";
+    if (routeType === 1 || (routeType >= 400 && routeType < 500)) return "subway";
+    if (routeType === 3 || (routeType >= 700 && routeType < 800)) return "bus";
+  }
 
-  // Fallback for older processed data that does not have routeType yet.
-  // If there is a route number, treat it as a bus. Otherwise use a generic transit icon.
-  if (String(item.routeShortName ?? "").trim()) return "bus";
+  // Fallback for feeds where route_type is missing or inconsistent.
+  if (/ferry|jetty|wharf|quay|water/.test(haystack)) return "ferry";
+  if (/train|rail|line|station/.test(haystack)) return "train";
+
+  if (shortName) return "bus";
 
   return "transit";
 }
@@ -4491,6 +4502,11 @@ async function loadCoreData() {
   console.log("Unfiltered timetable trips:", unfilteredTimetableTrips.length);
   console.log("Today timetable trips:", timetableTrips.length);
   console.log("Today vehicle animation trips:", vehicleTrips.length);
+  console.log("Today vehicle animation modes:", vehicleTrips.reduce((counts, trip) => {
+    const mode = getTransportMode(trip);
+    counts[mode] = (counts[mode] || 0) + 1;
+    return counts;
+  }, {}));
   console.log("Stop upcoming records:", Object.keys(stopUpcoming).length);
   console.log("Route timetable chunks:", Object.keys(routeTimetableManifest || {}).length);
 }

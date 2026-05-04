@@ -70,15 +70,23 @@ function buildRouteLookups() {
   const routeIdToShortName = {};
   const routeIdToLongName = {};
   const routeIdToType = {};
+  const routeIdToDisplayName = {};
 
   routes.rows.forEach(cols => {
     const routeId = cols[routes.headers.indexOf("route_id")];
-    routeIdToShortName[routeId] = cols[routes.headers.indexOf("route_short_name")];
-    routeIdToLongName[routeId] = cols[routes.headers.indexOf("route_long_name")];
+    const shortName = cols[routes.headers.indexOf("route_short_name")];
+    const longName = cols[routes.headers.indexOf("route_long_name")];
+
+    routeIdToShortName[routeId] = shortName;
+    routeIdToLongName[routeId] = longName;
     routeIdToType[routeId] = cols[routes.headers.indexOf("route_type")];
+
+    // Rail/ferry routes often have a blank short name in GTFS.
+    // Use long name/route id as the app-facing label so they are not dropped.
+    routeIdToDisplayName[routeId] = String(shortName || longName || routeId || "").trim();
   });
 
-  return { routeIdToShortName, routeIdToLongName, routeIdToType };
+  return { routeIdToShortName, routeIdToLongName, routeIdToType, routeIdToDisplayName };
 }
 
 function convertCalendar() {
@@ -147,14 +155,14 @@ function convertRoutes() {
 
 function convertTrips() {
   const trips = readGTFSFile("trips.txt");
-  const { routeIdToShortName, routeIdToLongName, routeIdToType } = buildRouteLookups();
+  const { routeIdToShortName, routeIdToLongName, routeIdToType, routeIdToDisplayName } = buildRouteLookups();
 
   const data = trips.rows.map(cols => {
     const routeId = cols[trips.headers.indexOf("route_id")];
     return {
       tripId: cols[trips.headers.indexOf("trip_id")],
       routeId,
-      routeShortName: routeIdToShortName[routeId],
+      routeShortName: routeIdToDisplayName[routeId],
       routeLongName: routeIdToLongName[routeId],
       routeType: routeIdToType[routeId],
       serviceId: cols[trips.headers.indexOf("service_id")],
@@ -194,7 +202,7 @@ function convertShapes() {
 function buildAllTripStopTimes() {
   const stopTimes = readGTFSFile("stop_times.txt");
   const trips = readGTFSFile("trips.txt");
-  const { routeIdToShortName, routeIdToLongName, routeIdToType } = buildRouteLookups();
+  const { routeIdToShortName, routeIdToLongName, routeIdToType, routeIdToDisplayName } = buildRouteLookups();
 
   const tripMap = {};
 
@@ -205,7 +213,7 @@ function buildAllTripStopTimes() {
     tripMap[tripId] = {
       tripId,
       routeId,
-      routeShortName: routeIdToShortName[routeId],
+      routeShortName: routeIdToDisplayName[routeId],
       routeLongName: routeIdToLongName[routeId],
       routeType: routeIdToType[routeId],
       serviceId: cols[trips.headers.indexOf("service_id")],
@@ -309,7 +317,15 @@ function convertVehicleTripsFull(allTripStopTimes) {
   }).filter(trip => trip.tripId && trip.shapeId && trip.startTime && trip.endTime);
 
   writeJson("vehicle-trips.json", vehicleTrips);
+
+  const modeCounts = vehicleTrips.reduce((counts, trip) => {
+    const type = String(trip.routeType ?? "unknown").trim() || "unknown";
+    counts[type] = (counts[type] || 0) + 1;
+    return counts;
+  }, {});
+
   console.log(`vehicle-trips.json OK FULL LIGHTWEIGHT (${vehicleTrips.length})`);
+  console.log("vehicle-trips route_type counts:", modeCounts);
 }
 
 function convertStartupTimetableAndRouteChunks(allTripStopTimes) {
