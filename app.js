@@ -79,6 +79,7 @@ let userLocationMarker = null;
 let manualSchedulePreviewMode = null;
 let manualSchedulePreviewDateNumber = null;
 let stopMapActionPoint = null;
+let temporaryMapPointMarker = null;
 
 let trackingMode = "scheduled";
 let liveBusMarkersByTripId = {};
@@ -110,6 +111,13 @@ let journeyAutocompleteTimers = { start: null, end: null };
 let journeyAutocompleteRequestIds = { start: 0, end: 0 };
 
 const trackingModeButtons = document.querySelectorAll(".tracking-mode-button");
+
+const temporaryMapPointIcon = L.icon({
+  iconUrl: "location_flag.svg",
+  iconSize: [34, 42],
+  iconAnchor: [8, 38],
+  popupAnchor: [0, -38]
+});
 
 // Set this to false if you only ever want true real-time behaviour.
 // When true, the prototype still shows buses if the current clock time has no active trips in the processed dataset.
@@ -1863,18 +1871,43 @@ function renderJourneyOverlay() {
   scheduleJourneyOverlayPeek();
 }
 
+function clearTemporaryMapPointMarker() {
+  if (temporaryMapPointMarker) {
+    temporaryMapPointMarker.remove();
+    temporaryMapPointMarker = null;
+  }
+}
+
+function showTemporaryMapPointMarker(point) {
+  clearTemporaryMapPointMarker();
+  if (!point) return;
+
+  temporaryMapPointMarker = L.marker([point.lat, point.lon], {
+    icon: temporaryMapPointIcon,
+    interactive: false,
+    keyboard: false,
+    zIndexOffset: 900
+  }).addTo(map);
+}
+
 function hideStopMapAction() {
   stopMapActionStopId = null;
   stopMapActionPoint = null;
+  clearTemporaryMapPointMarker();
   if (stopMapAction) stopMapAction.classList.add("is-hidden");
 }
 
 function getStopMapActionHTML(stop) {
   const isPoint = !stop?.id;
+  const title = isPoint ? "Use this map point" : "Use this stop";
   return `
-    <div class="stop-map-action-stack">
-      <button class="stop-map-action-button stop-map-action-secondary" type="button" data-stop-map-action="start">${isPoint ? "Start here" : "Start here"}</button>
-      <button class="stop-map-action-button" type="button" data-stop-map-action="destination">Set destination</button>
+    <div class="stop-map-action-card">
+      <button class="stop-map-action-close" type="button" data-stop-map-dismiss aria-label="Close location choices">×</button>
+      <div class="stop-map-action-title">${title}</div>
+      <div class="stop-map-action-stack">
+        <button class="stop-map-action-button stop-map-action-secondary" type="button" data-stop-map-action="start">Start here</button>
+        <button class="stop-map-action-button" type="button" data-stop-map-action="destination">Set destination</button>
+      </div>
     </div>
   `;
 }
@@ -1894,6 +1927,7 @@ function showStopMapAction(stop) {
 
   stopMapActionStopId = stop.id;
   stopMapActionPoint = null;
+  clearTemporaryMapPointMarker();
   stopMapAction.innerHTML = getStopMapActionHTML(stop);
   stopMapAction.classList.remove("is-hidden");
   positionStopMapAction(stop);
@@ -1904,6 +1938,7 @@ function showMapPointAction(latlng) {
 
   stopMapActionStopId = null;
   stopMapActionPoint = { lat: latlng.lat, lon: latlng.lng };
+  showTemporaryMapPointMarker(stopMapActionPoint);
   stopMapAction.innerHTML = getStopMapActionHTML(stopMapActionPoint);
   stopMapAction.classList.remove("is-hidden");
   positionStopMapAction(stopMapActionPoint);
@@ -5002,6 +5037,14 @@ document.addEventListener("click", event => {
 
 if (stopMapAction) {
   stopMapAction.addEventListener("click", event => {
+    const dismissButton = event.target.closest("[data-stop-map-dismiss]");
+    if (dismissButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      hideStopMapAction();
+      return;
+    }
+
     const button = event.target.closest("[data-stop-map-action]");
     if (!button) return;
 
@@ -5030,6 +5073,7 @@ if (locateUserButton) {
 map.on("movestart zoomstart", () => {
   isMapMoving = true;
   document.body.classList.add("is-map-moving");
+  hideStopMapAction();
 });
 
 map.on("moveend zoomend", () => {
@@ -5048,6 +5092,12 @@ map.on("click", event => {
       return;
     }
   }
+
+  if (stopMapAction && !stopMapAction.classList.contains("is-hidden")) {
+    hideStopMapAction();
+    return;
+  }
+
   clearBusFocus();
   selectedStopId = null;
   showMapPointAction(event.latlng);
