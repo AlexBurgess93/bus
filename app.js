@@ -1947,6 +1947,7 @@ function clearJourneyPlan() {
   clearJourneyRouteLines();
   hideStopMapAction();
   clearAllJourneySuggestions();
+  resetStopMarkerStyles();
   renderJourneyOverlay();
   updateBusPositionsLive();
 }
@@ -2540,9 +2541,77 @@ function selectJourneyOption(tripId) {
   fitSelectedJourneyOptionBounds(option);
 }
 
+function getDirectReachableStopIdsFromStop(startStopId) {
+  const reachableStopIds = new Set();
+  if (!startStopId) return reachableStopIds;
+
+  timetableTrips.forEach(trip => {
+    if (!tripMatchesMapFilters(trip)) return;
+    if (!Array.isArray(trip.stops) || trip.stops.length === 0) return;
+
+    const startIndex = trip.stops.findIndex(stopTime => stopTime.stopId === startStopId);
+    if (startIndex === -1) return;
+
+    // Only show stops that can be reached after boarding at this stop on this
+    // trip direction. Earlier stops on the same route are deliberately excluded
+    // because they would require boarding the opposite direction or transferring.
+    for (let i = startIndex + 1; i < trip.stops.length; i += 1) {
+      const stopId = trip.stops[i]?.stopId;
+      if (stopId) reachableStopIds.add(stopId);
+    }
+  });
+
+  return reachableStopIds;
+}
+
+function applyDirectReachabilityStopStyles(startStopId) {
+  const reachableStopIds = getDirectReachableStopIdsFromStop(startStopId);
+  const zoom = map.getZoom();
+  const hiddenAtThisZoom = zoom < STOP_DOTS_MIN_ZOOM;
+
+  Object.keys(stopMarkersByStopId).forEach(stopId => {
+    const marker = stopMarkersByStopId[stopId];
+
+    if (stopId === startStopId) {
+      marker.setStyle({
+        radius: hiddenAtThisZoom ? 7 : 9,
+        color: "#047857",
+        weight: 3,
+        fillColor: "#10b981",
+        fillOpacity: 1,
+        opacity: 1
+      });
+      marker.bringToFront();
+      return;
+    }
+
+    if (reachableStopIds.has(stopId)) {
+      marker.setStyle({
+        radius: hiddenAtThisZoom ? 3.6 : 5.5,
+        color: "#475569",
+        weight: 1.4,
+        fillColor: "#2563eb",
+        fillOpacity: hiddenAtThisZoom ? 0.6 : 0.92,
+        opacity: 1
+      });
+      return;
+    }
+
+    marker.setStyle({
+      radius: hiddenAtThisZoom ? 2.5 : 4.4,
+      color: "#111827",
+      weight: 1.2,
+      fillColor: "#374151",
+      fillOpacity: hiddenAtThisZoom ? 0.28 : 0.55,
+      opacity: hiddenAtThisZoom ? 0.35 : 0.72
+    });
+  });
+}
+
 function highlightJourneyMarkers() {
   const startStopId = getJourneyStartStopId();
   const endStopId = getJourneyEndStopId() || null;
+  const isSingleStartJourney = Boolean(startStopId && !endStopId);
   const isCompleteJourney = Boolean(startStopId && endStopId && !journeyPickMode);
   const visibleJourneyStopIds = new Set([startStopId, endStopId].filter(Boolean));
 
@@ -2552,6 +2621,11 @@ function highlightJourneyMarkers() {
   });
 
   applyDefaultStopMarkerStylesForZoom();
+
+  if (isSingleStartJourney) {
+    applyDirectReachabilityStopStyles(startStopId);
+    return;
+  }
 
   Object.keys(stopMarkersByStopId).forEach(stopId => {
     const marker = stopMarkersByStopId[stopId];
