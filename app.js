@@ -1264,9 +1264,11 @@ function createStopStandIconFromStyle(style = {}) {
   const opacity = Math.max(0, Math.min(1, Number(style.opacity ?? style.fillOpacity ?? 1)));
   const fillOpacity = Math.max(0, Math.min(1, Number(style.fillOpacity ?? opacity)));
   const visible = radius > 0 && opacity > 0 && fillOpacity > 0;
-  const size = Math.max(14, Math.round(radius * 2.8));
+
+  // Small, sharp infrastructure dot. Vehicles remain the bigger moving circles.
+  const size = visible ? Math.max(5, Math.round(radius * 2)) : 1;
   const colour = getStopIconColourFromStyle(style);
-  const classes = ["stop-stand-marker"];
+  const classes = ["stop-dot-marker"];
 
   if (!visible) classes.push("is-hidden");
   if (radius >= 8) classes.push("is-selected");
@@ -1274,9 +1276,9 @@ function createStopStandIconFromStyle(style = {}) {
 
   return L.divIcon({
     className: `stop-marker-icon ${classes.join(" ")}`,
-    html: `<span class="stop-stand-shape" style="--stop-colour:${colour}; --stop-opacity:${visible ? opacity : 0}; --stop-size:${size}px"></span>`,
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2]
+    html: `<span class="stop-dot-shape" style="--stop-colour:${colour}; --stop-opacity:${visible ? opacity : 0}; --stop-size:${size}px"></span>`,
+    iconSize: [Math.max(size, 1), Math.max(size, 1)],
+    iconAnchor: [Math.max(size, 1) / 2, Math.max(size, 1) / 2]
   });
 }
 
@@ -4033,6 +4035,7 @@ function createBusIcon(trip, isSelected = false, variant = "scheduled", delayCla
   const ariaLabel = escapeHTML(getTransportAriaLabel(trip));
   const compact = shouldUseCompactServiceMarker(isSelected);
 
+  // Wide/mid zoom: cheap dots only. This keeps the all-services layer stable on mobile.
   if (compact) {
     const dotClasses = [
       "service-dot-marker",
@@ -4050,31 +4053,10 @@ function createBusIcon(trip, isSelected = false, variant = "scheduled", delayCla
     });
   }
 
-  if (!isSelected) {
-    const offset = getMarkerLabelOffset(trip, variant);
-    const calloutClasses = [
-      "service-callout-marker",
-      `transport-${mode}`,
-      variant === "live" ? "live" : "scheduled"
-    ];
-
-    if (variant === "live") calloutClasses.push(delayClass);
-
-    return L.divIcon({
-      className: "vehicle-marker-icon",
-      html: `
-        <div class="${calloutClasses.join(" ")}" style="--label-x:${offset.x}px; --label-y:${offset.y}px" aria-label="${variant} ${ariaLabel}">
-          <span class="service-callout-dot"></span>
-          <span class="service-callout-chip">${markerLabel}</span>
-        </div>
-      `,
-      iconSize: [56, 48],
-      iconAnchor: [28, 34]
-    });
-  }
-
+  // Close zoom: original stable route-number circle, just smaller.
   const classes = [
     "route-bus-marker",
+    "route-bus-marker-compact",
     `transport-${mode}`,
     variant === "live" ? "live" : "scheduled"
   ];
@@ -4082,20 +4064,20 @@ function createBusIcon(trip, isSelected = false, variant = "scheduled", delayCla
   if (isSelected) classes.push("selected");
   if (variant === "live") classes.push(delayClass);
 
-  const iconSize = [34, 34];
-  const iconAnchor = [17, 17];
+  const size = isSelected ? 30 : (variant === "live" ? 26 : 22);
+  const anchor = size / 2;
 
   return L.divIcon({
     className: "vehicle-marker-icon",
     html: `
       <div class="${classes.join(" ")}" aria-label="${variant} ${ariaLabel}">
-        ${variant === "live" ? `<span class="route-bus-pulse"></span>` : ""}
+        ${variant === "live" && isSelected ? `<span class="route-bus-pulse"></span>` : ""}
         <span class="route-bus-badge">${markerLabel}</span>
         ${variant === "scheduled" ? `<span class="route-bus-scheduled-dot" aria-hidden="true"></span>` : ""}
       </div>
     `,
-    iconSize,
-    iconAnchor
+    iconSize: [size, size],
+    iconAnchor: [anchor, anchor]
   });
 }
 

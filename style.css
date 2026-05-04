@@ -3495,3 +3495,96 @@ html[data-map-theme="dark"] .service-callout-connector line {
 html[data-map-theme="dark"] .service-callout-chip::after {
   border-color: rgba(255, 255, 255, 0.18);
 }
+
+/* Stability rollback: use small route-number circles, not floating chips/connectors. */
+.service-callout-marker,
+.service-callout-chip,
+.service-callout-dot,
+.service-callout-connector,
+.service-callout-line {
+  display: none !important;
+}
+
+.route-bus-marker-compact .route-bus-badge {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  font-size: 9.5px;
+  border-width: 1.75px;
+  box-shadow: 0 2px 7px rgba(15, 23, 42, 0.22);
+}
+
+.route-bus-marker-compact.live .route-bus-badge {
+  min-width: 24px;
+  height: 24px;
+  font-size: 9.5px;
+}
+
+.route-bus-marker-compact.selected .route-bus-badge {
+  min-width: 28px;
+  height: 28px;
+  font-size: 10.5px;
+  border-width: 2.5px;
+  transform: none;
+}
+
+.route-bus-marker-compact.transport-train .route-bus-badge,
+.route-bus-marker-compact.transport-ferry .route-bus-badge,
+.route-bus-marker-compact.transport-tram .route-bus-badge,
+.route-bus-marker-compact.transport-subway .route-bus-badge,
+.route-bus-marker-compact.transport-transit .route-bus-badge {
+  min-width: 24px;
+  height: 24px;
+  font-size: 13px;
+}
+
+.route-bus-marker-compact.transport-train.live .route-bus-badge,
+.route-bus-marker-compact.transport-ferry.live .route-bus-badge,
+.route-bus-marker-compact.transport-tram.live .route-bus-badge,
+.route-bus-marker-compact.transport-subway.live .route-bus-badge,
+.route-bus-marker-compact.transport-transit.live .route-bus-badge {
+  min-width: 26px;
+  height: 26px;
+  font-size: 13px;
+}
+
+/* Stop infrastructure rollback: no SVG. Small black dot, large invisible tap target remains in JS. */
+.stop-marker-icon {
+  background: transparent !important;
+  border: 0 !important;
+  pointer-events: none;
+}
+
+.stop-stand-marker,
+.stop-stand-shape {
+  display: none !important;
+}
+
+.stop-dot-marker {
+  display: block;
+  width: var(--stop-size, 7px);
+  height: var(--stop-size, 7px);
+  opacity: var(--stop-opacity, 1);
+  transform: translateZ(0);
+}
+
+.stop-dot-shape {
+  display: block;
+  width: var(--stop-size, 7px);
+  height: var(--stop-size, 7px);
+  border-radius: 999px;
+  background: var(--stop-colour, #111827);
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.9), 0 1px 4px rgba(15, 23, 42, 0.28);
+}
+
+.stop-dot-marker.is-hidden {
+  opacity: 0 !important;
+}
+
+.stop-dot-marker.is-muted {
+  opacity: calc(var(--stop-opacity, 1) * 0.5);
+}
+
+.stop-dot-marker.is-selected .stop-dot-shape {
+  box-shadow: 0 0 0 2.5px rgba(255, 255, 255, 0.95), 0 4px 10px rgba(15, 23, 42, 0.32);
+}
