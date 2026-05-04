@@ -3955,6 +3955,11 @@ function getMarkerLabelOffset(trip = {}, variant = "live") {
 
   return slots[Math.abs(hash) % slots.length];
 }
+function shouldCenterServiceChipAtCurrentZoom() {
+  const maxZoom = map.getMaxZoom ? map.getMaxZoom() : 19;
+  return map.getZoom() >= maxZoom - 2;
+}
+
 function createBusIcon(trip, isSelected = false, variant = "scheduled", delayClass = "on-time") {
   const mode = getTransportMode(trip);
   const markerLabel = escapeHTML(getTransportLabel(trip));
@@ -3979,7 +3984,9 @@ function createBusIcon(trip, isSelected = false, variant = "scheduled", delayCla
   }
 
   if (!isSelected) {
-    const offset = getMarkerLabelOffset(trip, variant);
+    const offset = shouldCenterServiceChipAtCurrentZoom()
+      ? { x: 0, y: 0 }
+      : getMarkerLabelOffset(trip, variant);
     const calloutClasses = [
       "service-callout-marker",
       `transport-${mode}`,
@@ -4040,6 +4047,7 @@ function getServiceMarkerIconKey(trip, isSelected = false, variant = "scheduled"
     delayClass,
     isSelected ? "selected" : "normal",
     compact ? "compact" : "detailed",
+    shouldCenterServiceChipAtCurrentZoom() ? "chip-centered" : "chip-offset",
     currentMapTheme
   ].join("|");
 }
