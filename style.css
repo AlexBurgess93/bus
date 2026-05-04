@@ -3337,3 +3337,92 @@ html[data-map-theme="dark"] .service-callout-chip {
 html[data-map-theme="dark"] .ghost-network-delay-line {
   mix-blend-mode: screen;
 }
+
+/* Patch: bus stops use a black stand icon instead of blue vehicle-like dots. */
+.stop-marker-icon {
+  background: transparent !important;
+  border: 0 !important;
+  pointer-events: none;
+}
+
+.stop-stand-marker {
+  display: block;
+  width: var(--stop-size, 16px);
+  height: var(--stop-size, 16px);
+  opacity: var(--stop-opacity, 1);
+  transform: translateZ(0);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.stop-stand-marker.is-hidden {
+  opacity: 0 !important;
+}
+
+.stop-stand-marker.is-muted {
+  opacity: calc(var(--stop-opacity, 1) * 0.55);
+}
+
+.stop-stand-marker.is-selected {
+  filter: drop-shadow(0 4px 8px rgba(15, 23, 42, 0.28));
+}
+
+.stop-stand-shape {
+  display: block;
+  width: var(--stop-size, 16px);
+  height: var(--stop-size, 16px);
+  background: var(--stop-colour, #111827);
+  -webkit-mask: url("bus_stand_icon.svg") center / contain no-repeat;
+  mask: url("bus_stand_icon.svg") center / contain no-repeat;
+}
+
+/* Patch: selected vehicle view dims non-emphasised stop infrastructure. */
+.leaflet-container.vehicle-focus .stop-marker-icon {
+  opacity: 0.42;
+}
+
+.leaflet-container.vehicle-focus .stop-marker-icon:has(.is-selected) {
+  opacity: 1;
+}
+
+/* Patch: service chips now sit closer to their vehicle dot and are connected. */
+.service-callout-marker {
+  width: 84px;
+  height: 60px;
+}
+
+.service-callout-dot {
+  left: 42px;
+  top: 30px;
+  width: 10px;
+  height: 10px;
+  border-width: 2px;
+}
+
+.service-callout-connector {
+  position: absolute;
+  inset: 0;
+  width: 84px;
+  height: 60px;
+  pointer-events: none;
+  z-index: 1;
+  overflow: visible;
+}
+
+.service-callout-connector line {
+  stroke: rgba(15, 23, 42, 0.48);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.service-callout-chip {
+  left: calc(42px + var(--label-x));
+  top: calc(30px + var(--label-y));
+  height: 21px;
+  min-width: 28px;
+  padding: 0 7px;
+  z-index: 3;
+}
+
+html[data-map-theme="dark"] .service-callout-connector line {
+  stroke: rgba(248, 250, 252, 0.52);
+}

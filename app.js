@@ -1245,6 +1245,79 @@ function getFutureStopIdsForTrips(tripIds) {
 
 
 // ---------- Stop marker styling and interaction ----------
+
+function getStopIconColourFromStyle(style = {}) {
+  const radius = Number(style.radius || 0);
+  const fill = String(style.fillColor || "").toLowerCase();
+
+  if (fill === "#10b981" || fill === "#047857") return "#10b981";
+  if (fill === "#8b5cf6" || fill === "#6d28d9") return "#8b5cf6";
+  if (fill === "#f97316" || fill === "#f59e0b") return "#f97316";
+  if (radius >= 8 && (fill === "#2563eb" || fill === "#1d4ed8")) return "#2563eb";
+  if (fill === "#374151" || fill === "#e5e7eb" || fill === "#cbd5e1") return "#374151";
+
+  return "#111827";
+}
+
+function createStopStandIconFromStyle(style = {}) {
+  const radius = Number(style.radius || 0);
+  const opacity = Math.max(0, Math.min(1, Number(style.opacity ?? style.fillOpacity ?? 1)));
+  const fillOpacity = Math.max(0, Math.min(1, Number(style.fillOpacity ?? opacity)));
+  const visible = radius > 0 && opacity > 0 && fillOpacity > 0;
+  const size = Math.max(14, Math.round(radius * 2.8));
+  const colour = getStopIconColourFromStyle(style);
+  const classes = ["stop-stand-marker"];
+
+  if (!visible) classes.push("is-hidden");
+  if (radius >= 8) classes.push("is-selected");
+  if (opacity < 0.5 || fillOpacity < 0.5) classes.push("is-muted");
+
+  return L.divIcon({
+    className: `stop-marker-icon ${classes.join(" ")}`,
+    html: `<span class="stop-stand-shape" style="--stop-colour:${colour}; --stop-opacity:${visible ? opacity : 0}; --stop-size:${size}px"></span>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2]
+  });
+}
+
+function applyStopMarkerStyle(marker, style = {}) {
+  if (!marker) return;
+  marker._stopStyle = style;
+  marker.setIcon(createStopStandIconFromStyle(style));
+  marker.setOpacity(Math.max(0, Math.min(1, Number(style.opacity ?? 1))));
+
+  if (Number(style.radius || 0) >= 8) {
+    marker.setZIndexOffset(900);
+  } else if (Number(style.opacity ?? 1) <= 0.2) {
+    marker.setZIndexOffset(90);
+  } else {
+    marker.setZIndexOffset(120);
+  }
+}
+
+function createStopStandMarker(stop, style) {
+  const marker = L.marker([stop.lat, stop.lon], {
+    icon: createStopStandIconFromStyle(style),
+    interactive: false,
+    zIndexOffset: 120
+  });
+
+  marker.setStyle = function(nextStyle = {}) {
+    applyStopMarkerStyle(marker, nextStyle);
+    return marker;
+  };
+
+  const originalBringToFront = marker.bringToFront ? marker.bringToFront.bind(marker) : null;
+  marker.bringToFront = function() {
+    marker.setZIndexOffset(1000);
+    if (originalBringToFront) originalBringToFront();
+    return marker;
+  };
+
+  marker._stopStyle = style;
+  return marker;
+}
+
 function getDefaultStopStyleForZoom(zoom = map.getZoom()) {
   // Stop dots are high-detail infrastructure. Keep them hidden until the
   // user is close enough to interact with individual stops.
@@ -3945,12 +4018,12 @@ function getMarkerLabelOffset(trip = {}, variant = "live") {
   }
 
   const slots = [
-    { x: -34, y: -28 },
-    { x: 34, y: -28 },
-    { x: -42, y: 0 },
-    { x: 42, y: 0 },
-    { x: -28, y: 28 },
-    { x: 28, y: 28 }
+    { x: -24, y: -20 },
+    { x: 24, y: -20 },
+    { x: -30, y: 0 },
+    { x: 30, y: 0 },
+    { x: -22, y: 20 },
+    { x: 22, y: 20 }
   ];
 
   return slots[Math.abs(hash) % slots.length];
@@ -3988,17 +4061,24 @@ function createBusIcon(trip, isSelected = false, variant = "scheduled", delayCla
 
     if (variant === "live") calloutClasses.push(delayClass);
 
+    const originX = 42;
+    const originY = 30;
+    const chipX = originX + offset.x;
+    const chipY = originY + offset.y;
+
     return L.divIcon({
       className: "vehicle-marker-icon",
       html: `
         <div class="${calloutClasses.join(" ")}" style="--label-x:${offset.x}px; --label-y:${offset.y}px" aria-label="${variant} ${ariaLabel}">
+          <svg class="service-callout-connector" viewBox="0 0 84 60" aria-hidden="true" focusable="false">
+            <line x1="${originX}" y1="${originY}" x2="${chipX}" y2="${chipY}" />
+          </svg>
           <span class="service-callout-dot"></span>
-          <span class="service-callout-line"></span>
           <span class="service-callout-chip">${markerLabel}</span>
         </div>
       `,
-      iconSize: [104, 72],
-      iconAnchor: [52, 36]
+      iconSize: [84, 60],
+      iconAnchor: [42, 30]
     });
   }
 
@@ -4205,6 +4285,7 @@ function drawEtaMarkersForTrip(tripId) {
 }
 
 function focusSelectedBus(tripId, variant = selectedBusVariant) {
+  map.getContainer().classList.add("vehicle-focus");
   selectedTripId = tripId;
   selectedStopId = null;
   selectedBusVariant = variant;
@@ -4245,6 +4326,7 @@ function focusSelectedBus(tripId, variant = selectedBusVariant) {
 }
 
 function focusTripsForStop(stopId, upcomingItems) {
+  map.getContainer().classList.remove("vehicle-focus");
   selectedTripId = null;
   selectedStopId = stopId;
   highlightedTripIds = new Set(upcomingItems.map(item => item.tripId));
@@ -4271,6 +4353,7 @@ function focusSingleTrip(tripId) {
 }
 
 function clearBusFocus() {
+  map.getContainer().classList.remove("vehicle-focus");
   clearActiveMapPinMarker();
   selectedTripId = null;
   selectedStopId = null;
@@ -4761,14 +4844,9 @@ async function loadStops() {
   console.log("Stops loaded:", stops.length);
 
   stops.forEach(stop => {
-    // Visible stop dot stays small and clean.
-    const marker = L.circleMarker(
-      [stop.lat, stop.lon],
-      {
-        ...getDefaultStopStyleForZoom(),
-        interactive: false
-      }
-    ).addTo(map);
+    // Visible stop stand icon. It only appears at close zoom levels;
+    // wide zooms rely on the faint network paths to indicate coverage.
+    const marker = createStopStandMarker(stop, getDefaultStopStyleForZoom()).addTo(map);
 
     // Invisible hit area gives mobile users a much larger tap target without
     // visually enlarging every stop dot.
