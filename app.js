@@ -49,6 +49,8 @@ let routeLookupByShortName = {};
 let stopRoutesByStopId = {};
 let timetableTrips = [];
 let unfilteredTimetableTrips = [];
+let unfilteredVehicleTrips = [];
+let vehicleTrips = [];
 let stopUpcoming = {};
 let unfilteredStopUpcoming = {};
 let routeTimetableManifest = {};
@@ -81,6 +83,7 @@ let stopMapActionPoint = null;
 let trackingMode = "scheduled";
 let liveBusMarkersByTripId = {};
 let latestLiveTripPositionsByTripId = {};
+let activeVehicleTripLookupByTripId = {};
 let ghostRouteSegmentLine = null;
 let selectedBusVariant = "live";
 let transportModeFilter = "all";
@@ -795,24 +798,7 @@ function renderStopPanel(stop, upcomingItems) {
     ? routesForStop
         .slice(0, 18)
         .map(route => {
-          const status = getRouteTimetableStatus(route.label);
-          const className = `stop-route-pill stop-route-${escapeHTML(route.mode)} ${route.hasActiveTimes ? "has-active-times" : "no-active-times"} route-timetable-${escapeHTML(status)}`;
-
-          if (!route.hasActiveTimes && (status === "available" || status === "loading")) {
-            return `
-              <button
-                class="${className} stop-route-load-button"
-                type="button"
-                data-route-label="${escapeHTML(route.label)}"
-                ${status === "loading" ? "disabled" : ""}
-                aria-label="${status === "loading" ? "Loading" : "Load"} timetable for route ${escapeHTML(route.label)}"
-              >
-                ${escapeHTML(route.label)}
-                <span class="route-load-hint">${status === "loading" ? "loading" : "load"}</span>
-              </button>
-            `;
-          }
-
+          const className = `stop-route-pill stop-route-${escapeHTML(route.mode)} ${route.hasActiveTimes ? "has-active-times" : "no-active-times"}`;
           return `<span class="${className}">${escapeHTML(route.label)}</span>`;
         })
         .join("")
@@ -883,16 +869,7 @@ function renderStopPanel(stop, upcomingItems) {
 
   showStopMapAction(stop);
 
-  selectionPanelContent.querySelectorAll(".stop-route-load-button").forEach(button => {
-    button.addEventListener("click", async event => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      const routeLabel = button.getAttribute("data-route-label");
-      button.disabled = true;
-      await loadTimetableForRoute(routeLabel, { source: "stop panel" });
-    });
-  });
+  // Route pills are informational only; all current services are animated automatically.
 
   selectionPanelContent.querySelectorAll(".arrival-pill").forEach(button => {
     const selectUpcomingTrip = event => {
@@ -1041,7 +1018,7 @@ function drawGhostRouteSegmentForTrip(tripId) {
 
   if (trackingMode !== "ghost" || !tripId) return;
 
-  const trip = tripLookupByTripId[tripId];
+  const trip = getVehicleMarkerTripById(tripId);
   if (!trip) return;
 
   const scheduledPosition = latestTripPositionsByTripId[tripId];
@@ -1501,18 +1478,18 @@ function getNetworkLineStyleForTrip(trip) {
   const mode = getTransportMode(trip);
 
   if (mode === "train") {
-    return { color: "#7c3aed", weight: 3.5, opacity: 0.22 };
+    return { color: "#7c3aed", weight: 2.2, opacity: 0.10 };
   }
 
   if (mode === "ferry") {
-    return { color: "#0284c7", weight: 3, opacity: 0.24, dashArray: "7 9" };
+    return { color: "#0284c7", weight: 2, opacity: 0.11, dashArray: "7 12" };
   }
 
   if (mode === "tram" || mode === "subway") {
-    return { color: "#0891b2", weight: 3, opacity: 0.22 };
+    return { color: "#0891b2", weight: 2, opacity: 0.10 };
   }
 
-  return { color: "#334155", weight: 2.4, opacity: 0.16 };
+  return { color: "#334155", weight: 1.6, opacity: 0.055 };
 }
 
 function shapeTouchesExpandedViewport(shapeCoords) {
@@ -3523,6 +3500,7 @@ function findRepresentativeServiceDateNumber(mode) {
 function applyServiceResult(serviceDate, serviceResult, options = {}) {
   activeServiceIdsForToday = serviceResult.activeServiceIds;
   timetableTrips = serviceResult.trips;
+  vehicleTrips = unfilteredVehicleTrips.filter(trip => activeServiceIdsForToday.has(normaliseServiceId(trip.serviceId)));
   stopUpcoming = serviceResult.stopUpcoming;
   serviceDayOffsetSeconds = options.offset || 0;
   simulatedCurrentSecondsOverride = null;
@@ -3659,6 +3637,7 @@ function chooseServiceDayOffset() {
   }
 
   timetableTrips = [];
+  vehicleTrips = [];
   stopUpcoming = {};
   rebuildTripLookup();
 
@@ -3823,7 +3802,7 @@ function getServiceMarkerIconKey(trip, isSelected = false, variant = "scheduled"
 }
 
 function setVehicleMarkerIcon(marker, trip, isSelected = false, variant = "scheduled", delayClass = "on-time") {
-  if (!marker) return;
+  if (!marker || !trip) return;
 
   const iconKey = getServiceMarkerIconKey(trip, isSelected, variant, delayClass);
 
@@ -3994,7 +3973,7 @@ function focusSelectedBus(tripId, variant = selectedBusVariant) {
     const marker = busMarkersByTripId[id];
     const isSelected = id === selectedTripId && variant === "scheduled";
 
-    setVehicleMarkerIcon(marker, tripLookupByTripId[id], isSelected, "scheduled");
+    setVehicleMarkerIcon(marker, getVehicleMarkerTripById(id), isSelected, "scheduled");
     marker.setZIndexOffset(isSelected ? 1200 : 500);
   });
 
@@ -4003,7 +3982,7 @@ function focusSelectedBus(tripId, variant = selectedBusVariant) {
     const delayClass = getDelayStatus(getStableLiveDelaySeconds(id)).className;
     const isSelected = id === selectedTripId && variant === "live";
 
-    setVehicleMarkerIcon(marker, tripLookupByTripId[id], isSelected, "live", delayClass);
+    setVehicleMarkerIcon(marker, getVehicleMarkerTripById(id), isSelected, "live", delayClass);
     marker.setZIndexOffset(isSelected ? 1300 : 700);
   });
 
@@ -4489,6 +4468,7 @@ async function loadCoreData() {
   allTrips = await tripsRes.json();
   allShapes = await shapesRes.json();
   unfilteredTimetableTrips = await timetableRes.json();
+  unfilteredVehicleTrips = await fetchOptionalJSON("data/processed/vehicle-trips.json", []);
   unfilteredStopUpcoming = await stopUpcomingRes.json();
   serviceCalendarRows = await calendarRes.json();
   serviceCalendarDateRows = await fetchOptionalJSON("data/processed/calendar-dates.json", []);
@@ -4497,6 +4477,7 @@ async function loadCoreData() {
   buildRouteLookups();
   allTrips = allTrips.map(enrichTripFromRoute);
   unfilteredTimetableTrips = unfilteredTimetableTrips.map(enrichTripFromRoute);
+  unfilteredVehicleTrips = unfilteredVehicleTrips.map(enrichTripFromRoute);
   loadedTimetableRoutes = new Set(unfilteredTimetableTrips.map(trip => String(trip.routeShortName || "").trim()).filter(Boolean));
   buildVisualNetworkTrips();
 
@@ -4509,6 +4490,7 @@ async function loadCoreData() {
   console.log("Shapes:", Object.keys(allShapes).length);
   console.log("Unfiltered timetable trips:", unfilteredTimetableTrips.length);
   console.log("Today timetable trips:", timetableTrips.length);
+  console.log("Today vehicle animation trips:", vehicleTrips.length);
   console.log("Stop upcoming records:", Object.keys(stopUpcoming).length);
   console.log("Route timetable chunks:", Object.keys(routeTimetableManifest || {}).length);
 }
@@ -4561,6 +4543,58 @@ async function loadStops() {
 
 
 // ---------- Vehicle update loop ----------
+function interpolateAlongShapeByProgress(shapeCoords, progress) {
+  if (!shapeCoords || shapeCoords.length === 0) return null;
+  if (shapeCoords.length === 1) return shapeCoords[0];
+
+  const clamped = Math.max(0, Math.min(1, progress));
+  const exactIndex = clamped * (shapeCoords.length - 1);
+  const lowerIndex = Math.floor(exactIndex);
+  const upperIndex = Math.min(lowerIndex + 1, shapeCoords.length - 1);
+  const localProgress = exactIndex - lowerIndex;
+  const lowerPoint = shapeCoords[lowerIndex];
+  const upperPoint = shapeCoords[upperIndex];
+
+  return [
+    lowerPoint[0] + (upperPoint[0] - lowerPoint[0]) * localProgress,
+    lowerPoint[1] + (upperPoint[1] - lowerPoint[1]) * localProgress
+  ];
+}
+
+function getVehicleTripPositionNow(trip, currentSeconds) {
+  if (trip?.stops?.length) return getTripPositionNow(trip, currentSeconds);
+
+  const startSeconds = timeToSeconds(trip.startTime || trip.firstDepartureTime || trip.departureTime);
+  const endSeconds = timeToSeconds(trip.endTime || trip.lastArrivalTime || trip.arrivalTime);
+
+  if (Number.isNaN(startSeconds) || Number.isNaN(endSeconds)) return null;
+  if (currentSeconds < startSeconds || currentSeconds > endSeconds) return null;
+
+  const duration = Math.max(1, endSeconds - startSeconds);
+  const progress = (currentSeconds - startSeconds) / duration;
+  const shapeCoords = allShapes[trip.shapeId];
+  const position = interpolateAlongShapeByProgress(shapeCoords, progress);
+
+  if (!position) return null;
+
+  return {
+    position,
+    stopA: null,
+    stopB: null,
+    progress,
+    segmentIndex: null,
+    nextStopIndex: null
+  };
+}
+
+function getVehicleMarkerTripById(tripId) {
+  return tripLookupByTripId[tripId] || activeVehicleTripLookupByTripId[tripId] || vehicleTrips.find(trip => trip.tripId === tripId);
+}
+
+function getVisibleVehicleTrips() {
+  return vehicleTrips.length ? vehicleTrips : timetableTrips;
+}
+
 function getTripPositionNow(trip, currentSeconds) {
   if (!tripIsActiveAtSeconds(trip, currentSeconds)) {
     return null;
@@ -4610,8 +4644,10 @@ function updateBusPositionsLive() {
   const activeTripIds = new Set();
   const visibleTripIds = new Set();
 
-  timetableTrips.forEach(trip => {
-    const scheduledPosition = getTripPositionNow(trip, currentSeconds);
+  activeVehicleTripLookupByTripId = {};
+
+  getVisibleVehicleTrips().forEach(trip => {
+    const scheduledPosition = getVehicleTripPositionNow(trip, currentSeconds);
 
     if (!scheduledPosition) return;
 
@@ -4619,7 +4655,9 @@ function updateBusPositionsLive() {
     latestTripPositionsByTripId[trip.tripId] = scheduledPosition;
 
     const delaySeconds = getStableLiveDelaySeconds(trip.tripId);
-    const livePosition = getTripPositionNow(trip, currentSeconds - delaySeconds) || scheduledPosition;
+    activeVehicleTripLookupByTripId[trip.tripId] = trip;
+
+    const livePosition = getVehicleTripPositionNow(trip, currentSeconds - delaySeconds) || scheduledPosition;
     latestLiveTripPositionsByTripId[trip.tripId] = livePosition;
 
     if (!shouldRenderTripMarkers(trip, scheduledPosition, livePosition)) {

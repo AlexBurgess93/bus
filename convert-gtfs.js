@@ -289,6 +289,29 @@ function buildStopUpcomingFromTrips(trips) {
   return stopUpcoming;
 }
 
+function convertVehicleTripsFull(allTripStopTimes) {
+  const vehicleTrips = allTripStopTimes.map(trip => {
+    const firstStop = trip.stops[0];
+    const lastStop = trip.stops[trip.stops.length - 1];
+
+    return {
+      tripId: trip.tripId,
+      routeId: trip.routeId,
+      routeShortName: trip.routeShortName,
+      routeLongName: trip.routeLongName,
+      routeType: trip.routeType,
+      serviceId: trip.serviceId,
+      headsign: trip.headsign,
+      shapeId: trip.shapeId,
+      startTime: firstStop?.departureTime || firstStop?.arrivalTime,
+      endTime: lastStop?.arrivalTime || lastStop?.departureTime
+    };
+  }).filter(trip => trip.tripId && trip.shapeId && trip.startTime && trip.endTime);
+
+  writeJson("vehicle-trips.json", vehicleTrips);
+  console.log(`vehicle-trips.json OK FULL LIGHTWEIGHT (${vehicleTrips.length})`);
+}
+
 function convertStartupTimetableAndRouteChunks(allTripStopTimes) {
   const startupTrips = allTripStopTimes.filter(trip => STARTUP_ACTIVE_ROUTES.includes(trip.routeShortName));
   writeJson("trip-stop-times.json", startupTrips);
@@ -335,6 +358,7 @@ const allTripStopTimes = buildAllTripStopTimes();
 console.log(`Built full trip-stop-times in memory (${allTripStopTimes.length})`);
 
 convertStopRoutesFull(allTripStopTimes);
+convertVehicleTripsFull(allTripStopTimes);
 convertStartupTimetableAndRouteChunks(allTripStopTimes);
 
 console.log("ALL DONE");
