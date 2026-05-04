@@ -51,6 +51,9 @@ let timetableTrips = [];
 let unfilteredTimetableTrips = [];
 let stopUpcoming = {};
 let unfilteredStopUpcoming = {};
+let routeTimetableManifest = {};
+let loadedTimetableRoutes = new Set();
+let loadingTimetableRoutes = new Set();
 let serviceCalendarRows = [];
 let serviceCalendarDateRows = [];
 let activeServiceIdsForToday = new Set();
@@ -306,8 +309,14 @@ function savePinState() {
 function rebuildTripLookup() {
   tripLookupByTripId = {};
 
+  // Keep both the active service-day trips and any loaded route chunks searchable.
+  // This lets a newly loaded route immediately power stop panels, vehicle clicks, and journey previews.
+  unfilteredTimetableTrips.forEach(trip => {
+    if (trip?.tripId) tripLookupByTripId[trip.tripId] = trip;
+  });
+
   timetableTrips.forEach(trip => {
-    tripLookupByTripId[trip.tripId] = trip;
+    if (trip?.tripId) tripLookupByTripId[trip.tripId] = trip;
   });
 }
 
@@ -437,6 +446,104 @@ function getRoutesForStop(stopId) {
   });
 
   return Array.from(routeMap.values()).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+}
+
+
+function getRouteTimetableStatus(routeLabel) {
+  const label = String(routeLabel || "").trim();
+  if (!label) return "unavailable";
+  if (loadedTimetableRoutes.has(label)) return "loaded";
+  if (loadingTimetableRoutes.has(label)) return "loading";
+  if (routeTimetableManifest && routeTimetableManifest[label]) return "available";
+  return "unavailable";
+}
+
+function getRouteTimetablePath(routeLabel) {
+  const label = String(routeLabel || "").trim();
+  const manifestPath = routeTimetableManifest?.[label];
+  if (!manifestPath) return null;
+
+  // Manifest paths are stored relative to data/processed/.
+  return `data/processed/${manifestPath}`;
+}
+
+function mergeTimetableTrips(newTrips = []) {
+  const existingTripIds = new Set(unfilteredTimetableTrips.map(trip => String(trip.tripId)));
+  const merged = [];
+
+  newTrips.forEach(rawTrip => {
+    if (!rawTrip?.tripId) return;
+    const tripId = String(rawTrip.tripId);
+    if (existingTripIds.has(tripId)) return;
+
+    const enriched = enrichTripFromRoute(rawTrip);
+    merged.push(enriched);
+    existingTripIds.add(tripId);
+  });
+
+  if (!merged.length) return 0;
+
+  unfilteredTimetableTrips = unfilteredTimetableTrips.concat(merged);
+  return merged.length;
+}
+
+async function loadTimetableForRoute(routeLabel, options = {}) {
+  const label = String(routeLabel || "").trim();
+  if (!label) return false;
+
+  if (loadedTimetableRoutes.has(label)) return true;
+  if (loadingTimetableRoutes.has(label)) return false;
+
+  const routePath = getRouteTimetablePath(label);
+  if (!routePath) {
+    console.warn(`No route timetable chunk available for ${label}.`);
+    return false;
+  }
+
+  loadingTimetableRoutes.add(label);
+  refreshLoadedRouteUI(label);
+
+  try {
+    const response = await fetch(routePath);
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+
+    const trips = await response.json();
+    const added = mergeTimetableTrips(trips);
+
+    loadedTimetableRoutes.add(label);
+    loadingTimetableRoutes.delete(label);
+
+    // Reapply the current Perth service-day filter so the newly loaded route becomes active immediately.
+    if (manualSchedulePreviewDateNumber) {
+      applyServiceResult(manualSchedulePreviewDateNumber, getTripsForServiceDate(manualSchedulePreviewDateNumber), {
+        label: "manual preview after route load",
+        offset: serviceDayOffsetSeconds
+      });
+    } else {
+      setActiveTimetableForServiceDate(new Date(), `loaded route ${label}`);
+    }
+
+    updateBusPositionsLive();
+    updateNetworkLayer();
+
+    if (selectedStopId && stopLookup[selectedStopId]) {
+      renderStopPanel(stopLookup[selectedStopId], getUpcomingForStop(selectedStopId));
+    }
+
+    console.log(`Loaded timetable route ${label}`, { addedTrips: added, totalTimetableTrips: unfilteredTimetableTrips.length });
+    return true;
+  } catch (error) {
+    loadingTimetableRoutes.delete(label);
+    console.warn(`Could not load timetable route ${label}`, error);
+    refreshLoadedRouteUI(label);
+    return false;
+  }
+}
+
+function refreshLoadedRouteUI(routeLabel) {
+  if (selectedStopId && stopLookup[selectedStopId]) {
+    renderStopPanel(stopLookup[selectedStopId], getUpcomingForStop(selectedStopId));
+  }
 }
 
 function clearActiveMapPinMarker() {
@@ -687,7 +794,27 @@ function renderStopPanel(stop, upcomingItems) {
   const routeStripHTML = routesForStop.length
     ? routesForStop
         .slice(0, 18)
-        .map(route => `<span class="stop-route-pill stop-route-${escapeHTML(route.mode)} ${route.hasActiveTimes ? "has-active-times" : "no-active-times"}">${escapeHTML(route.label)}</span>`)
+        .map(route => {
+          const status = getRouteTimetableStatus(route.label);
+          const className = `stop-route-pill stop-route-${escapeHTML(route.mode)} ${route.hasActiveTimes ? "has-active-times" : "no-active-times"} route-timetable-${escapeHTML(status)}`;
+
+          if (!route.hasActiveTimes && (status === "available" || status === "loading")) {
+            return `
+              <button
+                class="${className} stop-route-load-button"
+                type="button"
+                data-route-label="${escapeHTML(route.label)}"
+                ${status === "loading" ? "disabled" : ""}
+                aria-label="${status === "loading" ? "Loading" : "Load"} timetable for route ${escapeHTML(route.label)}"
+              >
+                ${escapeHTML(route.label)}
+                <span class="route-load-hint">${status === "loading" ? "loading" : "load"}</span>
+              </button>
+            `;
+          }
+
+          return `<span class="${className}">${escapeHTML(route.label)}</span>`;
+        })
         .join("")
     : `<span class="stop-route-empty">No routes found for this stop.</span>`;
 
@@ -755,6 +882,17 @@ function renderStopPanel(stop, upcomingItems) {
   }
 
   showStopMapAction(stop);
+
+  selectionPanelContent.querySelectorAll(".stop-route-load-button").forEach(button => {
+    button.addEventListener("click", async event => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const routeLabel = button.getAttribute("data-route-label");
+      button.disabled = true;
+      await loadTimetableForRoute(routeLabel, { source: "stop panel" });
+    });
+  });
 
   selectionPanelContent.querySelectorAll(".arrival-pill").forEach(button => {
     const selectUpcomingTrip = event => {
@@ -4354,10 +4492,12 @@ async function loadCoreData() {
   unfilteredStopUpcoming = await stopUpcomingRes.json();
   serviceCalendarRows = await calendarRes.json();
   serviceCalendarDateRows = await fetchOptionalJSON("data/processed/calendar-dates.json", []);
+  routeTimetableManifest = await fetchOptionalJSON("data/processed/route-timetable-manifest.json", {});
 
   buildRouteLookups();
   allTrips = allTrips.map(enrichTripFromRoute);
   unfilteredTimetableTrips = unfilteredTimetableTrips.map(enrichTripFromRoute);
+  loadedTimetableRoutes = new Set(unfilteredTimetableTrips.map(trip => String(trip.routeShortName || "").trim()).filter(Boolean));
   buildVisualNetworkTrips();
 
   chooseServiceDayOffset();
@@ -4370,6 +4510,7 @@ async function loadCoreData() {
   console.log("Unfiltered timetable trips:", unfilteredTimetableTrips.length);
   console.log("Today timetable trips:", timetableTrips.length);
   console.log("Stop upcoming records:", Object.keys(stopUpcoming).length);
+  console.log("Route timetable chunks:", Object.keys(routeTimetableManifest || {}).length);
 }
 
 async function loadStops() {
