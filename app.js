@@ -3957,7 +3957,10 @@ function getMarkerLabelOffset(trip = {}, variant = "live") {
 }
 function shouldCenterServiceChipAtCurrentZoom() {
   const maxZoom = map.getMaxZoom ? map.getMaxZoom() : 19;
-  return map.getZoom() >= maxZoom - 2;
+
+  // GPS locate lands at maxZoom - 4. From that zoom level inward,
+  // keep the service chip centred over the vehicle so it sits on the road.
+  return map.getZoom() >= maxZoom - 4;
 }
 
 function createBusIcon(trip, isSelected = false, variant = "scheduled", delayClass = "on-time") {
@@ -4447,9 +4450,12 @@ function showLocationMessage(title, message) {
 function focusUserLocation(lat, lon) {
   clearBusFocus();
 
-  showLocationMessage("Start set from your location", "Nearest stop selected in the background. Tap a stop, then set it as your destination.");
+  showLocationMessage("Location found", "Tap a stop to view services or begin a stop-to-stop journey.");
 
-  map.setView([lat, lon], Math.max(map.getZoom(), 16), {
+  const maxZoom = map.getMaxZoom ? map.getMaxZoom() : 19;
+  const gpsZoom = Math.max(0, maxZoom - 4);
+
+  map.setView([lat, lon], Math.max(map.getZoom(), gpsZoom), {
     animate: true
   });
 }

@@ -3337,3 +3337,10 @@ html[data-map-theme="dark"] .service-callout-chip {
 html[data-map-theme="dark"] .ghost-network-delay-line {
   mix-blend-mode: screen;
 }
+
+
+/* Temporary product decision: hide the From/To journey planner.
+   The app is stop-to-stop only until journey planning is refined. */
+#journeyOverlay {
+  display: none !important;
+}
