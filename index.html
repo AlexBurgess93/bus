@@ -13,6 +13,7 @@
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   />
+
 </head>
 
 <body>
@@ -22,6 +23,7 @@
     <button id="locateUserButton" class="map-round-button locate-button" type="button" aria-label="Use my location to find the nearest stop"><img src="gps_icon.svg" alt="" aria-hidden="true" /></button>
 
     <button id="themeToggleButton" class="map-round-button theme-toggle-button" type="button" aria-label="Enable dark map"><img id="themeToggleIcon" src="enable_dark_mode.svg" alt="" aria-hidden="true" /></button>
+
 
     <div class="tracking-mode-control" aria-label="Tracking display mode">
       <div class="tracking-segmented-control" role="group" aria-label="Choose tracking mode">
@@ -71,6 +73,7 @@
       </div>
     </aside>
 
+
     <div id="liveNoticeModal" class="app-modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="liveNoticeTitle" aria-describedby="liveNoticeDescription">
       <div class="app-modal-card">
         <h2 id="liveNoticeTitle">Noteworthy Comment</h2>
@@ -78,10 +81,23 @@
         <button id="liveNoticeOkButton" class="app-modal-button" type="button">Ok</button>
       </div>
     </div>
+
+    <div id="scheduleNoticeModal" class="app-modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="scheduleNoticeTitle" aria-describedby="scheduleNoticeDescription">
+      <div class="app-modal-card">
+        <h2 id="scheduleNoticeTitle">Timetable date not available</h2>
+        <p id="scheduleNoticeDescription">The loaded timetable does not contain services for the current Perth date. Pick a schedule type to preview instead.</p>
+        <div class="app-modal-button-stack">
+          <button class="app-modal-button" type="button" data-schedule-preview="weekday">Show weekday</button>
+          <button class="app-modal-button" type="button" data-schedule-preview="weekend">Show weekend</button>
+          <button class="app-modal-button" type="button" data-schedule-preview="publicHoliday">Show public holiday</button>
+        </div>
+      </div>
+    </div>
   </main>
 
   <!-- Leaflet map JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 
   <script src="app.js"></script>
 </body>

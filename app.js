@@ -67,6 +67,9 @@ const VEHICLE_UPDATE_INTERVAL_MS = 3000;
 const MAP_SETTLE_REFRESH_DELAY_MS = 120;
 let hasWarnedAboutNoActiveTrips = false;
 let userLocationMarker = null;
+let manualSchedulePreviewMode = null;
+let manualSchedulePreviewDateNumber = null;
+let stopMapActionPoint = null;
 
 let trackingMode = "scheduled";
 let liveBusMarkersByTripId = {};
@@ -107,6 +110,7 @@ const selectionPanelContent = document.getElementById("selectionPanelContent");
 const closeSelectionPanelButton = document.getElementById("closeSelectionPanelButton");
 const liveNoticeModal = document.getElementById("liveNoticeModal");
 const liveNoticeOkButton = document.getElementById("liveNoticeOkButton");
+const scheduleNoticeModal = document.getElementById("scheduleNoticeModal");
 const LIVE_NOTICE_SEEN_KEY = "tripTrackerLiveNoticeSeen";
 const locateUserButton = document.getElementById("locateUserButton");
 const themeToggleButton = document.getElementById("themeToggleButton");
@@ -1096,6 +1100,7 @@ function selectStop(stop) {
   focusTripsForStop(stop.id, upcoming);
   drawStopUpcomingPaths(upcoming);
   highlightRelevantStopMarkers(stop.id, upcoming);
+  showStopMapAction(stop);
   renderStopPanel(stop, upcoming);
 }
 
@@ -1599,9 +1604,7 @@ function scheduleJourneyOverlayPeek() {
 
   cancelJourneyOverlayPeekTimer();
 
-  const startStopId = getJourneyStartStopId();
-  const endStopId = getJourneyEndStopId() || null;
-  const canPeek = Boolean(startStopId || endStopId) && !journeyPickMode && !journeyOverlay.classList.contains("is-hidden");
+  const canPeek = !journeyPickMode && !journeyOverlay.classList.contains("is-hidden");
 
   if (!canPeek) {
     journeyOverlay.classList.remove("is-peeking");
@@ -1612,7 +1615,7 @@ function scheduleJourneyOverlayPeek() {
     if (!journeyPickMode && !journeyOverlay.classList.contains("is-hidden")) {
       journeyOverlay.classList.add("is-peeking");
     }
-  }, 5000);
+  }, 3500);
 }
 
 function markJourneyOverlayTouched() {
@@ -1629,6 +1632,9 @@ function renderJourneyOverlay() {
   // The destination planner is now a permanent control. It can still peek/collapse,
   // but it should not disappear just because no journey has been entered yet.
   journeyOverlay.classList.remove("is-hidden");
+  if (!journeyPickMode && document.activeElement !== journeyStartInput && document.activeElement !== journeyEndInput) {
+    journeyOverlay.classList.add("is-peeking");
+  }
   journeyOverlay.classList.toggle("has-start", Boolean(startStopId));
   journeyOverlay.classList.toggle("has-end", Boolean(endStopId));
 
@@ -1668,34 +1674,26 @@ function renderJourneyOverlay() {
 
 function hideStopMapAction() {
   stopMapActionStopId = null;
+  stopMapActionPoint = null;
   if (stopMapAction) stopMapAction.classList.add("is-hidden");
 }
 
 function getStopMapActionHTML(stop) {
-  if (journeyPickMode === "start") {
-    return `<button class="stop-map-action-button" type="button" data-stop-map-action="start">Add to From</button>`;
-  }
-
-  if (journeyPickMode === "end") {
-    return `<button class="stop-map-action-button" type="button" data-stop-map-action="destination">Add to To</button>`;
-  }
-
-  if (getJourneyStartStopId()) {
-    return `<button class="stop-map-action-button" type="button" data-stop-map-action="destination">Set destination</button>`;
-  }
-
+  const isPoint = !stop?.id;
   return `
     <div class="stop-map-action-stack">
-      <button class="stop-map-action-button stop-map-action-secondary" type="button" data-stop-map-action="start">Start here</button>
+      <button class="stop-map-action-button stop-map-action-secondary" type="button" data-stop-map-action="start">${isPoint ? "Start here" : "Start here"}</button>
       <button class="stop-map-action-button" type="button" data-stop-map-action="destination">Set destination</button>
     </div>
   `;
 }
 
-function positionStopMapAction(stop) {
-  if (!stopMapAction || !stop) return;
+function positionStopMapAction(stopOrPoint) {
+  if (!stopMapAction || !stopOrPoint) return;
 
-  const point = map.latLngToContainerPoint([stop.lat, stop.lon]);
+  const lat = stopOrPoint.lat;
+  const lon = stopOrPoint.lon ?? stopOrPoint.lng;
+  const point = map.latLngToContainerPoint([lat, lon]);
   stopMapAction.style.left = `${point.x}px`;
   stopMapAction.style.top = `${point.y}px`;
 }
@@ -1704,21 +1702,34 @@ function showStopMapAction(stop) {
   if (!stopMapAction || !stop) return;
 
   stopMapActionStopId = stop.id;
+  stopMapActionPoint = null;
   stopMapAction.innerHTML = getStopMapActionHTML(stop);
   stopMapAction.classList.remove("is-hidden");
   positionStopMapAction(stop);
 }
 
+function showMapPointAction(latlng) {
+  if (!stopMapAction || !latlng) return;
+
+  stopMapActionStopId = null;
+  stopMapActionPoint = { lat: latlng.lat, lon: latlng.lng };
+  stopMapAction.innerHTML = getStopMapActionHTML(stopMapActionPoint);
+  stopMapAction.classList.remove("is-hidden");
+  positionStopMapAction(stopMapActionPoint);
+}
+
 function handleStopMapAction(action) {
   const stop = stopLookup[stopMapActionStopId];
-  if (!stop) return;
+  const point = stopMapActionPoint;
 
-  if (action === "start" || journeyPickMode === "start") {
-    setJourneyStartFromStop(stop);
+  if (action === "start") {
+    if (stop) setJourneyStartFromStop(stop);
+    else if (point) setJourneyStartFromMapPoint(point);
     return;
   }
 
-  setJourneyEndFromStop(stop);
+  if (stop) setJourneyEndFromStop(stop);
+  else if (point) setJourneyEndFromMapPoint(point);
 }
 
 function fitJourneyBounds(options = []) {
@@ -1785,26 +1796,73 @@ function setJourneyEndFromStop(stop) {
     type: "stop",
     stopId: stop.id
   };
+  journeyPickMode = null;
   hideStopMapAction();
   clearAllJourneySuggestions();
   renderJourneyOverlay();
 
-  if (userLocation?.nearestStopId) {
-    journeyStart = {
-      type: "gps",
-      lat: userLocation.lat,
-      lon: userLocation.lon,
-      nearestStopId: userLocation.nearestStopId
-    };
-    journeyPickMode = null;
-    renderJourneyOverlay();
+  if (journeyStart) {
     showJourneyOptions();
     return;
   }
 
-  journeyPickMode = "start";
+  renderJourneyPrompt("Destination set", "Now choose a starting stop, place, map point, or use your location.", "start");
+  highlightJourneyMarkers();
+}
+
+function setJourneyStartFromMapPoint(point) {
+  const nearest = findNearestStopWithDistance(point.lat, point.lon);
+  if (!nearest) return;
+
+  journeySelectedPlaces.start = null;
+  journeyStart = {
+    type: "map",
+    label: "Selected map point",
+    lat: point.lat,
+    lon: point.lon,
+    stopId: nearest.stop.id,
+    nearestStopId: nearest.stop.id,
+    nearestStopDistanceMetres: nearest.distanceMetres
+  };
+  journeyPickMode = null;
+  hideStopMapAction();
+  clearAllJourneySuggestions();
   renderJourneyOverlay();
-  renderJourneyPrompt("Destination set", `Tap your starting stop, or use your location.`, "start");
+  highlightJourneyMarkers();
+
+  if (journeyEnd) {
+    showJourneyOptions();
+    return;
+  }
+
+  renderJourneyPrompt("Start set", "Now tap a destination stop, place, or map point.", "end");
+}
+
+function setJourneyEndFromMapPoint(point) {
+  const nearest = findNearestStopWithDistance(point.lat, point.lon);
+  if (!nearest) return;
+
+  journeySelectedPlaces.end = null;
+  journeyEnd = {
+    type: "map",
+    label: "Selected map point",
+    lat: point.lat,
+    lon: point.lon,
+    stopId: nearest.stop.id,
+    nearestStopId: nearest.stop.id,
+    nearestStopDistanceMetres: nearest.distanceMetres
+  };
+  journeyPickMode = null;
+  hideStopMapAction();
+  clearAllJourneySuggestions();
+  renderJourneyOverlay();
+
+  if (journeyStart) {
+    showJourneyOptions();
+    return;
+  }
+
+  renderJourneyPrompt("Destination set", "Now choose a starting stop, place, map point, or use your location.", "start");
   highlightJourneyMarkers();
 }
 
@@ -1894,7 +1952,7 @@ function clearJourneyPlan() {
 }
 
 function getJourneyEndpointCoords(endpoint, stopId) {
-  if (endpoint?.lat && endpoint?.lon) return { lat: endpoint.lat, lon: endpoint.lon };
+  if (Number.isFinite(endpoint?.lat) && Number.isFinite(endpoint?.lon)) return { lat: endpoint.lat, lon: endpoint.lon };
   const stop = stopLookup[stopId];
   if (stop) return { lat: stop.lat, lon: stop.lon };
   return null;
@@ -2932,15 +2990,102 @@ function timeToSeconds(timeString) {
   return hours * 3600 + minutes * 60 + seconds;
 }
 
-function getClockSecondsPrecise() {
-  const now = new Date();
+const PERTH_TIME_ZONE = "Australia/Perth";
 
+function getPerthDateTimeParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-AU", {
+    timeZone: PERTH_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    weekday: "long",
+    hour12: false
+  }).formatToParts(date);
+
+  const values = {};
+  parts.forEach(part => {
+    if (part.type !== "literal") values[part.type] = part.value;
+  });
+
+  let hour = Number(values.hour || 0);
+  if (hour === 24) hour = 0;
+
+  return {
+    year: Number(values.year),
+    month: Number(values.month),
+    day: Number(values.day),
+    hour,
+    minute: Number(values.minute || 0),
+    second: Number(values.second || 0),
+    weekday: String(values.weekday || "").toLowerCase()
+  };
+}
+
+function getPerthDateNumber(date = new Date()) {
+  const parts = getPerthDateTimeParts(date);
+  return Number(`${parts.year}${String(parts.month).padStart(2, "0")}${String(parts.day).padStart(2, "0")}`);
+}
+
+function getPerthClockSecondsPrecise(date = new Date()) {
+  const parts = getPerthDateTimeParts(date);
   return (
-    now.getHours() * 3600 +
-    now.getMinutes() * 60 +
-    now.getSeconds() +
-    now.getMilliseconds() / 1000
+    parts.hour * 3600 +
+    parts.minute * 60 +
+    parts.second +
+    date.getMilliseconds() / 1000
   );
+}
+
+function dateNumberToUTCDate(dateNumber) {
+  const value = String(dateNumber);
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(4, 6));
+  const day = Number(value.slice(6, 8));
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function shiftDateNumber(dateNumber, days) {
+  const date = dateNumberToUTCDate(dateNumber);
+  date.setUTCDate(date.getUTCDate() + days);
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return Number(`${year}${month}${day}`);
+}
+
+function getCalendarDayFieldFromDateNumber(dateNumber) {
+  const dayFields = [
+    "sunday",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday"
+  ];
+  return dayFields[dateNumberToUTCDate(dateNumber).getUTCDay()];
+}
+
+function getServiceDateInfo(input = new Date()) {
+  if (typeof input === "number") {
+    return {
+      dateNumber: input,
+      dayField: getCalendarDayFieldFromDateNumber(input)
+    };
+  }
+
+  const parts = getPerthDateTimeParts(input);
+  return {
+    dateNumber: Number(`${parts.year}${String(parts.month).padStart(2, "0")}${String(parts.day).padStart(2, "0")}`),
+    dayField: parts.weekday
+  };
+}
+
+function getClockSecondsPrecise() {
+  return getPerthClockSecondsPrecise();
 }
 
 function getCurrentSecondsPrecise() {
@@ -3016,28 +3161,179 @@ function findNearestInServiceSecond(clockSeconds) {
   return best ? best.seconds : null;
 }
 
+function getTripsForServiceDate(date = new Date()) {
+  const activeServiceIds = getActiveServiceIdsForDate(date);
+
+  if (activeServiceIds.size === 0) {
+    return {
+      activeServiceIds,
+      trips: [],
+      stopUpcoming: {}
+    };
+  }
+
+  const trips = unfilteredTimetableTrips.filter(trip => activeServiceIds.has(normaliseServiceId(trip.serviceId)));
+
+  return {
+    activeServiceIds,
+    trips,
+    stopUpcoming: createStopUpcomingFromTrips(trips)
+  };
+}
+
+function getFeedDateRange() {
+  const dates = [];
+  serviceCalendarRows.forEach(row => {
+    const startDate = Number(getRowValue(row, "startDate", "start_date"));
+    const endDate = Number(getRowValue(row, "endDate", "end_date"));
+    if (Number.isFinite(startDate)) dates.push(startDate);
+    if (Number.isFinite(endDate)) dates.push(endDate);
+  });
+  serviceCalendarDateRows.forEach(row => {
+    const date = Number(getRowValue(row, "date", "date"));
+    if (Number.isFinite(date)) dates.push(date);
+  });
+
+  if (!dates.length) return null;
+  return { start: Math.min(...dates), end: Math.max(...dates) };
+}
+
+function dateNumberMatchesPreviewMode(dateNumber, mode) {
+  const dayField = getCalendarDayFieldFromDateNumber(dateNumber);
+  if (mode === "weekday") return !["saturday", "sunday"].includes(dayField);
+  if (mode === "weekend") return ["saturday", "sunday"].includes(dayField);
+  return true;
+}
+
+function getPreviewModeLabel(mode) {
+  if (mode === "weekday") return "weekday preview";
+  if (mode === "weekend") return "weekend preview";
+  if (mode === "publicHoliday") return "public holiday preview";
+  return "manual preview";
+}
+
+function findRepresentativeServiceDateNumber(mode) {
+  if (mode === "publicHoliday") {
+    const exceptionDates = Array.from(new Set(
+      serviceCalendarDateRows
+        .map(row => Number(getRowValue(row, "date", "date")))
+        .filter(Number.isFinite)
+    )).sort((a, b) => a - b);
+
+    for (const dateNumber of exceptionDates) {
+      const result = getTripsForServiceDate(dateNumber);
+      if (result.trips.length > 0) return dateNumber;
+    }
+  }
+
+  const range = getFeedDateRange();
+  if (!range) return null;
+
+  let dateNumber = range.start;
+  let guard = 0;
+  while (dateNumber <= range.end && guard < 900) {
+    if (dateNumberMatchesPreviewMode(dateNumber, mode)) {
+      const result = getTripsForServiceDate(dateNumber);
+      if (result.trips.length > 0) return dateNumber;
+    }
+    dateNumber = shiftDateNumber(dateNumber, 1);
+    guard += 1;
+  }
+
+  return null;
+}
+
+function applyServiceResult(serviceDate, serviceResult, options = {}) {
+  activeServiceIdsForToday = serviceResult.activeServiceIds;
+  timetableTrips = serviceResult.trips;
+  stopUpcoming = serviceResult.stopUpcoming;
+  serviceDayOffsetSeconds = options.offset || 0;
+  simulatedCurrentSecondsOverride = null;
+  rebuildTripLookup();
+
+  console.log("Using timetable service day:", {
+    label: options.label || "service day",
+    serviceDate: typeof serviceDate === "number" ? serviceDate : getLocalDateNumber(serviceDate),
+    activeServiceIds: activeServiceIdsForToday.size,
+    scheduledTrips: timetableTrips.length,
+    activeTripsNow: countActiveTripsInListAtSeconds(timetableTrips, options.seconds ?? getClockSecondsPrecise()),
+    clockSeconds: Math.round(getClockSecondsPrecise()),
+    serviceDayOffsetSeconds
+  });
+}
+
+function showScheduleNoticeModal(reason = "The loaded timetable does not contain services for the current Perth date.") {
+  if (!scheduleNoticeModal) return;
+  const description = document.getElementById("scheduleNoticeDescription");
+  if (description) {
+    description.textContent = `${reason} Pick a schedule type to preview instead.`;
+  }
+  scheduleNoticeModal.classList.remove("is-hidden");
+}
+
+function hideScheduleNoticeModal() {
+  if (scheduleNoticeModal) scheduleNoticeModal.classList.add("is-hidden");
+}
+
+function applyManualSchedulePreview(mode) {
+  const dateNumber = findRepresentativeServiceDateNumber(mode);
+  if (!dateNumber) {
+    showScheduleNoticeModal(`No ${getPreviewModeLabel(mode)} exists in this loaded timetable.`);
+    return;
+  }
+
+  const result = getTripsForServiceDate(dateNumber);
+  if (!result.trips.length) {
+    showScheduleNoticeModal(`No ${getPreviewModeLabel(mode)} trips exist in this loaded timetable.`);
+    return;
+  }
+
+  manualSchedulePreviewMode = mode;
+  manualSchedulePreviewDateNumber = dateNumber;
+  hideScheduleNoticeModal();
+  applyServiceResult(dateNumber, result, {
+    label: getPreviewModeLabel(mode),
+    offset: 0,
+    seconds: getClockSecondsPrecise()
+  });
+
+  clearBusFocus();
+  renderDefaultContextPanel();
+  updateBusPositionsLive();
+  updateNetworkLayer();
+}
+
 function chooseServiceDayOffset() {
   const now = new Date();
-  const clockSeconds = getClockSecondsPrecise();
+  const perthDateNumber = getPerthDateNumber(now);
+  const clockSeconds = getPerthClockSecondsPrecise(now);
+
+  if (manualSchedulePreviewMode && manualSchedulePreviewDateNumber) {
+    const result = getTripsForServiceDate(manualSchedulePreviewDateNumber);
+    if (result.trips.length) {
+      applyServiceResult(manualSchedulePreviewDateNumber, result, {
+        label: getPreviewModeLabel(manualSchedulePreviewMode),
+        offset: 0,
+        seconds: clockSeconds
+      });
+      return;
+    }
+  }
 
   const candidateDefinitions = [
     {
-      label: "current service day",
-      serviceDate: now,
+      label: "current Perth service day",
+      serviceDate: perthDateNumber,
       offset: 0,
-      seconds: clockSeconds
+      seconds: clockSeconds,
+      priority: 0
     },
     {
-      label: "previous service day after midnight",
-      serviceDate: shiftDate(now, -1),
+      label: "previous Perth service day after midnight",
+      serviceDate: shiftDateNumber(perthDateNumber, -1),
       offset: 86400,
-      seconds: clockSeconds + 86400
-    },
-    {
-      label: "next service day before midnight",
-      serviceDate: shiftDate(now, 1),
-      offset: -86400,
-      seconds: clockSeconds - 86400
+      seconds: clockSeconds + 86400,
+      priority: 1
     }
   ];
 
@@ -3053,55 +3349,60 @@ function chooseServiceDayOffset() {
     };
   });
 
-  scoredCandidates.sort((a, b) => {
-    if (b.activeTrips !== a.activeTrips) return b.activeTrips - a.activeTrips;
-    return b.scheduledTrips - a.scheduledTrips;
-  });
+  const currentCandidate = scoredCandidates[0];
+  const previousCandidate = scoredCandidates[1];
+  let bestCandidate = null;
 
-  const bestCandidate = scoredCandidates[0];
+  // Normal case: always respect the actual current Perth service date.
+  if (currentCandidate?.scheduledTrips > 0) {
+    bestCandidate = currentCandidate;
+  }
+
+  // Only switch to yesterday's GTFS service day shortly after midnight, where trips
+  // can legally run as 24:xx or 25:xx on the previous service date.
+  if (clockSeconds < 3 * 3600 && previousCandidate?.activeTrips > 0) {
+    bestCandidate = previousCandidate;
+  }
+
   simulatedCurrentSecondsOverride = null;
   serviceDayOffsetSeconds = 0;
 
   if (bestCandidate && bestCandidate.scheduledTrips > 0) {
-    activeServiceIdsForToday = bestCandidate.serviceResult.activeServiceIds;
-    timetableTrips = bestCandidate.serviceResult.trips;
-    stopUpcoming = bestCandidate.serviceResult.stopUpcoming;
-    serviceDayOffsetSeconds = bestCandidate.offset;
-    rebuildTripLookup();
-
-    console.log("Using timetable service day:", {
+    applyServiceResult(bestCandidate.serviceDate, bestCandidate.serviceResult, {
       label: bestCandidate.label,
-      serviceDate: getLocalDateNumber(bestCandidate.serviceDate),
-      activeServiceIds: bestCandidate.activeServiceIds,
-      scheduledTrips: bestCandidate.scheduledTrips,
-      activeTripsNow: bestCandidate.activeTrips,
-      clockSeconds: Math.round(clockSeconds),
-      serviceDayOffsetSeconds
+      offset: bestCandidate.offset,
+      seconds: bestCandidate.seconds
     });
 
     if (bestCandidate.activeTrips === 0) {
-      console.warn("Correct service day was selected, but no vehicle is currently mid-trip at the device time.");
+      console.warn("Correct Perth service day was selected, but no vehicle is currently mid-trip at the current Perth time.");
     }
 
     return;
   }
 
-  // Last-resort only: this means the feed calendar data is missing or does not line up
-  // with the trip service_ids. We keep this disabled for accuracy by default.
   timetableTrips = [];
   stopUpcoming = {};
   rebuildTripLookup();
 
-  console.warn("No valid GTFS service day matched this date/time. Check calendar.json, calendar-dates.json, and trip service IDs.", {
-    localDate: getLocalDateNumber(now),
+  const range = getFeedDateRange();
+  const reason = range
+    ? `The loaded GTFS feed covers ${range.start} to ${range.end}, but today in Perth is ${perthDateNumber}.`
+    : "The loaded GTFS feed has no usable calendar date range.";
+
+  console.warn("No valid GTFS service day matched the current Perth date/time.", {
+    perthDate: perthDateNumber,
+    feedRange: range,
     candidates: scoredCandidates.map(candidate => ({
       label: candidate.label,
-      serviceDate: getLocalDateNumber(candidate.serviceDate),
+      serviceDate: candidate.serviceDate,
       activeServiceIds: candidate.activeServiceIds,
       scheduledTrips: candidate.scheduledTrips,
       activeTrips: candidate.activeTrips
     }))
   });
+
+  showScheduleNoticeModal(reason);
 }
 
 function createStopLookup(stops) {
@@ -3748,25 +4049,11 @@ function requestUserLocation(options = {}) {
 
 
 function getLocalDateNumber(date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-
-  return Number(`${year}${month}${day}`);
+  return getPerthDateNumber(date);
 }
 
 function getCalendarDayField(date = new Date()) {
-  const dayFields = [
-    "sunday",
-    "monday",
-    "tuesday",
-    "wednesday",
-    "thursday",
-    "friday",
-    "saturday"
-  ];
-
-  return dayFields[date.getDay()];
+  return getServiceDateInfo(date).dayField;
 }
 
 function getRowValue(row, camelKey, snakeKey = null) {
@@ -3785,14 +4072,11 @@ function calendarFlagIsActive(value) {
 }
 
 function shiftDate(date, days) {
-  const shifted = new Date(date);
-  shifted.setDate(shifted.getDate() + days);
-  return shifted;
+  return shiftDateNumber(getPerthDateNumber(date), days);
 }
 
 function getActiveServiceIdsForDate(date = new Date()) {
-  const dateNumber = getLocalDateNumber(date);
-  const dayField = getCalendarDayField(date);
+  const { dateNumber, dayField } = getServiceDateInfo(date);
   const activeServiceIds = new Set();
 
   serviceCalendarRows.forEach(service => {
@@ -4254,6 +4538,7 @@ if (themeToggleButton) {
   }, { passive: true });
 }
 
+
 if (journeyOverlay) {
   journeyOverlay.addEventListener("pointerdown", event => {
     if (journeyOverlay.classList.contains("is-peeking")) {
@@ -4413,10 +4698,19 @@ map.on("moveend zoomend", () => {
   refreshMapAfterInteraction();
   refreshUserLocationIcon();
   if (stopMapActionStopId) positionStopMapAction(stopLookup[stopMapActionStopId]);
+  else if (stopMapActionPoint) positionStopMapAction(stopMapActionPoint);
 });
 
-map.on("click", () => {
-  resetAppView();
+map.on("click", event => {
+  if (event?.originalEvent) {
+    const target = event.originalEvent.target;
+    if (target?.closest?.(".leaflet-control, .map-round-button, .tracking-mode-control, .journey-overlay, .selection-panel, .stop-map-action")) {
+      return;
+    }
+  }
+  clearBusFocus();
+  selectedStopId = null;
+  showMapPointAction(event.latlng);
 });
 
 closeSelectionPanelButton.addEventListener("click", event => {
@@ -4449,6 +4743,16 @@ if (liveNoticeModal) {
     if (event.target === liveNoticeModal) {
       closeLiveNoticeModal();
     }
+  });
+}
+
+if (scheduleNoticeModal) {
+  scheduleNoticeModal.querySelectorAll("[data-schedule-preview]").forEach(button => {
+    button.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      applyManualSchedulePreview(button.getAttribute("data-schedule-preview"));
+    });
   });
 }
 

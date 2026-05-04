@@ -2906,3 +2906,71 @@ html[data-map-theme="dark"] .journey-use-location-inline {
 .journey-final-arrival-marker span {
   background: #111827;
 }
+
+/* Timetable warning modal uses the same base visual style as the live-data popup. */
+.app-modal-button-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.app-modal-button-stack .app-modal-button {
+  min-height: 42px;
+}
+
+.app-modal-button-stack .app-modal-button:nth-child(2) {
+  background: #2563eb;
+}
+
+.app-modal-button-stack .app-modal-button:nth-child(3) {
+  background: #7c3aed;
+}
+
+/* Journey overlay default state: tucked down near the bottom panel until tapped. */
+.journey-overlay {
+  bottom: calc(clamp(136px, 22vh, 190px) + var(--journey-map-edge-gap, 14px));
+}
+
+.journey-overlay.is-peeking {
+  transform: translateY(calc(100% - 24px));
+}
+
+@media (max-width: 640px) {
+  .journey-overlay {
+    left: 10px;
+    right: 10px;
+    bottom: calc(clamp(112px, 18vh, 146px) + 10px);
+  }
+
+  .journey-overlay.is-peeking {
+    transform: translateY(calc(100% - 20px));
+  }
+}
+
+/* Stop/map point action buttons should always offer both From and To choices. */
+.stop-map-action-stack {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  justify-content: center;
+}
+
+.stop-map-action-secondary {
+  background: #111827;
+  box-shadow: 0 10px 22px rgba(17, 24, 39, 0.24);
+}
+
+/* Keep horizontal result cards clear of the close button and browser chrome. */
+.selection-panel.journey-options-mode {
+  overflow: visible;
+  padding-top: 12px;
+  padding-bottom: 16px;
+}
+
+.selection-panel.journey-options-mode .journey-options-strip {
+  padding: 8px 64px 12px 2px;
+  align-items: stretch;
+}
+
+.selection-panel.journey-options-mode .journey-option-pill {
+  min-height: 78px;
+}
