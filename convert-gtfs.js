@@ -10,7 +10,7 @@ fs.mkdirSync(processedDir, { recursive: true });
 fs.mkdirSync(routeChunksDir, { recursive: true });
 
 // These are loaded immediately on app start.
-// All other routes are generated as route chunks and can be loaded on demand from the stop panel.
+// All other routes are generated as route chunks and can be loaded automatically when a visible service is selected.
 const STARTUP_ACTIVE_ROUTES = [
   "24", "32", "33", "39", "72", "73",
   "176", "177", "178", "179", "270",
@@ -55,8 +55,12 @@ function writeRouteChunk(filename, data) {
   fs.writeFileSync(path.join(routeChunksDir, filename), JSON.stringify(data));
 }
 
-function safeRouteFilename(routeShortName) {
-  return `route-${String(routeShortName || "unknown").trim().replace(/[^a-zA-Z0-9_-]+/g, "_")}.json`;
+function safeRouteFilename(routeKey) {
+  return `route-${String(routeKey || "unknown").trim().replace(/[^a-zA-Z0-9_-]+/g, "_")}.json`;
+}
+
+function getTimetableChunkKeyForTrip(trip) {
+  return String(trip.routeShortName || trip.routeId || trip.routeLongName || "unknown").trim();
 }
 
 function timeToSeconds(timeString) {
@@ -308,6 +312,7 @@ function convertVehicleTripsFull(allTripStopTimes) {
       routeShortName: trip.routeShortName,
       routeLongName: trip.routeLongName,
       routeType: trip.routeType,
+      routeTimetableKey: getTimetableChunkKeyForTrip(trip),
       serviceId: trip.serviceId,
       headsign: trip.headsign,
       shapeId: trip.shapeId,
@@ -335,20 +340,21 @@ function convertStartupTimetableAndRouteChunks(allTripStopTimes) {
 
   const byRoute = {};
   allTripStopTimes.forEach(trip => {
-    if (!trip.routeShortName) return;
+    const routeKey = getTimetableChunkKeyForTrip(trip);
+    if (!routeKey) return;
     if (STARTUP_ACTIVE_ROUTES.includes(trip.routeShortName)) return;
-    if (!byRoute[trip.routeShortName]) byRoute[trip.routeShortName] = [];
-    byRoute[trip.routeShortName].push(trip);
+    if (!byRoute[routeKey]) byRoute[routeKey] = [];
+    byRoute[routeKey].push(trip);
   });
 
   const manifest = {};
   fs.rmSync(routeChunksDir, { recursive: true, force: true });
   fs.mkdirSync(routeChunksDir, { recursive: true });
 
-  Object.keys(byRoute).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(routeShortName => {
-    const filename = safeRouteFilename(routeShortName);
-    writeRouteChunk(filename, byRoute[routeShortName]);
-    manifest[routeShortName] = `timetable-routes/${filename}`;
+  Object.keys(byRoute).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(routeKey => {
+    const filename = safeRouteFilename(routeKey);
+    writeRouteChunk(filename, byRoute[routeKey]);
+    manifest[routeKey] = `timetable-routes/${filename}`;
   });
 
   writeJson("route-timetable-manifest.json", manifest);

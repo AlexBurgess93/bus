@@ -3180,3 +3180,160 @@ html[data-map-theme="dark"] .schedule-mode-label {
 html[data-map-theme="dark"] .schedule-cycle-button.is-active img {
   filter: none;
 }
+
+/* Patch: schedule button stays dark; label appears, holds briefly, then fades. */
+.schedule-cycle-button,
+.schedule-cycle-button.is-active,
+html[data-map-theme="dark"] .schedule-cycle-button,
+html[data-map-theme="dark"] .schedule-cycle-button.is-active {
+  background: rgba(17, 24, 39, 0.94) !important;
+  color: #ffffff !important;
+  border-color: rgba(15, 23, 42, 0.08) !important;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.25) !important;
+}
+
+.schedule-cycle-button img,
+.schedule-cycle-button.is-active img,
+html[data-map-theme="dark"] .schedule-cycle-button img,
+html[data-map-theme="dark"] .schedule-cycle-button.is-active img {
+  filter: none !important;
+  opacity: 1;
+}
+
+.schedule-mode-label {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 3000ms ease;
+}
+
+.schedule-mode-label.is-visible {
+  opacity: 1;
+}
+
+/* Patch: the tucked journey/search panel was too hidden. Expanded state is untouched. */
+.journey-overlay.is-peeking {
+  transform: translateY(calc(100% - 80px)) !important;
+}
+
+/* Patch: selected stop/map picker callout title can be a real stop name. */
+.stop-map-action-title {
+  max-width: 210px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.stop-map-action-card.is-stop-point .stop-map-action-title {
+  color: #1d4ed8;
+}
+
+/* Patch: service labels become chips connected to smaller dots instead of large route circles. */
+.service-callout-marker {
+  position: relative;
+  width: 104px;
+  height: 72px;
+  transform: translateZ(0);
+}
+
+.service-callout-dot {
+  position: absolute;
+  left: 52px;
+  top: 36px;
+  width: 12px;
+  height: 12px;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background: #6b7280;
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.3);
+  z-index: 2;
+}
+
+.service-callout-line {
+  position: absolute;
+  left: 52px;
+  top: 36px;
+  width: max(16px, calc(abs(var(--label-x)) * 1px));
+  height: 1.5px;
+  background: rgba(15, 23, 42, 0.45);
+  transform-origin: 0 50%;
+  transform: rotate(0deg);
+  display: none;
+}
+
+.service-callout-chip {
+  position: absolute;
+  left: calc(52px + var(--label-x));
+  top: calc(36px + var(--label-y));
+  transform: translate(-50%, -50%);
+  min-width: 30px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  color: #111827;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: -0.03em;
+  box-shadow: 0 5px 16px rgba(15, 23, 42, 0.18);
+  z-index: 3;
+  white-space: nowrap;
+}
+
+.service-callout-marker.transport-train .service-callout-dot,
+.service-callout-marker.transport-train .service-callout-chip {
+  border-color: rgba(124, 58, 237, 0.55);
+  color: #5b21b6;
+}
+
+.service-callout-marker.transport-ferry .service-callout-dot,
+.service-callout-marker.transport-ferry .service-callout-chip {
+  border-color: rgba(2, 132, 199, 0.55);
+  color: #0369a1;
+}
+
+.service-callout-marker.live.ahead .service-callout-dot { background: #2563eb; }
+.service-callout-marker.live.behind .service-callout-dot { background: #f97316; }
+.service-callout-marker.live.very-late .service-callout-dot { background: #dc2626; }
+.service-callout-marker.live.on-time .service-callout-dot { background: #16a34a; }
+
+.service-callout-marker.live.ahead .service-callout-chip {
+  border-color: rgba(37, 99, 235, 0.5);
+  color: #1d4ed8;
+}
+
+.service-callout-marker.live.behind .service-callout-chip {
+  border-color: rgba(249, 115, 22, 0.5);
+  color: #c2410c;
+}
+
+.service-callout-marker.live.very-late .service-callout-chip {
+  border-color: rgba(220, 38, 38, 0.5);
+  color: #b91c1c;
+}
+
+.service-callout-marker.live.on-time .service-callout-chip {
+  border-color: rgba(22, 163, 74, 0.45);
+  color: #047857;
+}
+
+html[data-map-theme="dark"] .service-callout-chip {
+  background: rgba(24, 24, 27, 0.94);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #f8fafc;
+}
+
+.ghost-network-delay-line {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  mix-blend-mode: multiply;
+}
+
+html[data-map-theme="dark"] .ghost-network-delay-line {
+  mix-blend-mode: screen;
+}

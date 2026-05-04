@@ -79,6 +79,8 @@ let userLocationMarker = null;
 let manualSchedulePreviewMode = null;
 let manualSchedulePreviewDateNumber = null;
 let scheduleCycleMode = "today";
+let scheduleModeLabelHideTimer = null;
+let ghostDelayNetworkLines = [];
 let stopMapActionPoint = null;
 let temporaryMapPointMarker = null;
 
@@ -456,6 +458,10 @@ function getRoutesForStop(stopId) {
 }
 
 
+function getTimetableChunkKeyForTrip(trip = {}) {
+  return String(trip.routeTimetableKey || trip.routeShortName || trip.routeId || getRouteDisplayNameForTrip(trip) || "").trim();
+}
+
 function getRouteTimetableStatus(routeLabel) {
   const label = String(routeLabel || "").trim();
   if (!label) return "unavailable";
@@ -550,6 +556,33 @@ async function loadTimetableForRoute(routeLabel, options = {}) {
 function refreshLoadedRouteUI(routeLabel) {
   if (selectedStopId && stopLookup[selectedStopId]) {
     renderStopPanel(stopLookup[selectedStopId], getUpcomingForStop(selectedStopId));
+  }
+}
+
+async function ensureTimetableDetailsForTrip(trip) {
+  if (!trip?.tripId) return trip;
+
+  const existing = tripLookupByTripId[trip.tripId];
+  if (existing?.stops?.length) return existing;
+
+  const routeKey = getTimetableChunkKeyForTrip(trip);
+  if (!routeKey) return existing || trip;
+
+  await loadTimetableForRoute(routeKey, { silent: true });
+  return tripLookupByTripId[trip.tripId] || existing || trip;
+}
+
+async function handleVehicleMarkerClick(event, trip, variant = "live") {
+  stopLeafletEvent(event);
+
+  drawSpecificTripShape(trip);
+  focusSelectedBus(trip.tripId, variant);
+  renderBusPanel(trip, variant);
+
+  const detailedTrip = await ensureTimetableDetailsForTrip(trip);
+  if (selectedTripId === trip.tripId) {
+    drawSpecificTripShape(detailedTrip);
+    renderBusPanel(detailedTrip, variant);
   }
 }
 
@@ -900,6 +933,9 @@ function renderStopPanel(stop, upcomingItems) {
 
       if (trip) {
         renderBusPanel(trip);
+        ensureTimetableDetailsForTrip(trip).then(detailedTrip => {
+          if (selectedTripId === tripId) renderBusPanel(detailedTrip);
+        });
       }
     };
 
@@ -998,6 +1034,33 @@ function clearGhostRouteSegmentLine() {
     map.removeLayer(ghostRouteSegmentLine);
     ghostRouteSegmentLine = null;
   }
+}
+
+function clearGhostDelayNetworkLines() {
+  ghostDelayNetworkLines.forEach(line => map.removeLayer(line));
+  ghostDelayNetworkLines = [];
+}
+
+function addGhostDelayNetworkLine(trip, scheduledPosition, livePosition, delaySeconds) {
+  if (trackingMode !== "ghost") return;
+  if (!trip || !scheduledPosition?.position || !livePosition?.position) return;
+  if (Math.abs(delaySeconds) < 60) return;
+
+  const shapeCoords = allShapes[trip.shapeId];
+  const segmentCoords = getShapeSegmentBetweenPositions(shapeCoords, scheduledPosition.position, livePosition.position);
+  if (segmentCoords.length < 2) return;
+
+  const status = getDelayStatus(delaySeconds);
+  const line = L.polyline(segmentCoords, {
+    color: getDelayColour(delaySeconds),
+    weight: 6,
+    opacity: 0.25,
+    lineCap: "round",
+    lineJoin: "round",
+    className: `ghost-network-delay-line ${status.className}`
+  }).addTo(map);
+
+  ghostDelayNetworkLines.push(line);
 }
 
 function getShapeSegmentBetweenPositions(shapeCoords, positionA, positionB) {
@@ -1328,6 +1391,45 @@ function resetStopMarkerStyles() {
   applyStopHitAreaStylesForZoom();
 }
 
+function emphasiseSelectedStopMarker(stopId) {
+  const marker = stopMarkersByStopId[stopId];
+  if (!marker) return;
+
+  const startStopId = getJourneyStartStopId();
+  const endStopId = getJourneyEndStopId();
+
+  if (stopId === startStopId) {
+    marker.setStyle({
+      radius: 10,
+      color: "#047857",
+      weight: 3.5,
+      fillColor: "#10b981",
+      fillOpacity: 1,
+      opacity: 1
+    });
+  } else if (stopId === endStopId) {
+    marker.setStyle({
+      radius: 10,
+      color: "#6d28d9",
+      weight: 3.5,
+      fillColor: "#8b5cf6",
+      fillOpacity: 1,
+      opacity: 1
+    });
+  } else {
+    marker.setStyle({
+      radius: 10,
+      color: "#1d4ed8",
+      weight: 3.5,
+      fillColor: "#2563eb",
+      fillOpacity: 1,
+      opacity: 1
+    });
+  }
+
+  marker.bringToFront();
+}
+
 function highlightRelevantStopMarkers(selectedStopId, upcomingItems) {
   const tripIds = new Set(upcomingItems.map(item => item.tripId));
   const relevantStopIds = getFutureStopIdsForTrips(tripIds);
@@ -1339,9 +1441,9 @@ function highlightRelevantStopMarkers(selectedStopId, upcomingItems) {
 
     if (stopId === selectedStopId) {
       marker.setStyle({
-        radius: 8,
+        radius: 10,
         color: "#1d4ed8",
-        weight: 3,
+        weight: 3.5,
         fillColor: "#2563eb",
         fillOpacity: 1,
         opacity: 1
@@ -1889,11 +1991,14 @@ function hideStopMapAction() {
 
 function getStopMapActionHTML(stop) {
   const isPoint = !stop?.id;
-  const title = isPoint ? "Use this map point" : "Use this stop";
+  const title = isPoint
+    ? "Use this map point"
+    : cleanStopName(stop.name || "Selected stop");
+
   return `
-    <div class="stop-map-action-card">
+    <div class="stop-map-action-card ${isPoint ? "is-map-point" : "is-stop-point"}">
       <button class="stop-map-action-close" type="button" data-stop-map-dismiss aria-label="Close location choices">×</button>
-      <div class="stop-map-action-title">${title}</div>
+      <div class="stop-map-action-title">${escapeHTML(title)}</div>
       <div class="stop-map-action-stack">
         <button class="stop-map-action-button stop-map-action-secondary" type="button" data-stop-map-action="start">Start here</button>
         <button class="stop-map-action-button" type="button" data-stop-map-action="destination">Set destination</button>
@@ -1921,6 +2026,7 @@ function showStopMapAction(stop) {
   stopMapAction.innerHTML = getStopMapActionHTML(stop);
   stopMapAction.classList.remove("is-hidden");
   positionStopMapAction(stop);
+  emphasiseSelectedStopMarker(stop.id);
 }
 
 function showMapPointAction(latlng) {
@@ -3565,6 +3671,14 @@ function updateScheduleCycleUI(mode = scheduleCycleMode) {
   if (scheduleModeLabel) {
     scheduleModeLabel.textContent = getScheduleCycleLabel(mode);
     scheduleModeLabel.classList.add("is-visible");
+
+    if (scheduleModeLabelHideTimer) {
+      window.clearTimeout(scheduleModeLabelHideTimer);
+    }
+
+    scheduleModeLabelHideTimer = window.setTimeout(() => {
+      scheduleModeLabel.classList.remove("is-visible");
+    }, 2000);
   }
 
   if (scheduleCycleButton) {
@@ -3821,6 +3935,26 @@ function interpolateAlongShape(shapeCoords, stopA, stopB, progress) {
 
 
 // ---------- Service marker rendering ----------
+
+function getMarkerLabelOffset(trip = {}, variant = "live") {
+  const seed = String(trip.tripId || trip.routeId || "0") + variant;
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = ((hash << 5) - hash) + seed.charCodeAt(i);
+    hash |= 0;
+  }
+
+  const slots = [
+    { x: -34, y: -28 },
+    { x: 34, y: -28 },
+    { x: -42, y: 0 },
+    { x: 42, y: 0 },
+    { x: -28, y: 28 },
+    { x: 28, y: 28 }
+  ];
+
+  return slots[Math.abs(hash) % slots.length];
+}
 function createBusIcon(trip, isSelected = false, variant = "scheduled", delayClass = "on-time") {
   const mode = getTransportMode(trip);
   const markerLabel = escapeHTML(getTransportLabel(trip));
@@ -3841,6 +3975,30 @@ function createBusIcon(trip, isSelected = false, variant = "scheduled", delayCla
       html: `<span class="${dotClasses.join(" ")}" aria-label="${variant} ${ariaLabel}"></span>`,
       iconSize: variant === "live" ? [12, 12] : [9, 9],
       iconAnchor: variant === "live" ? [6, 6] : [4.5, 4.5]
+    });
+  }
+
+  if (!isSelected) {
+    const offset = getMarkerLabelOffset(trip, variant);
+    const calloutClasses = [
+      "service-callout-marker",
+      `transport-${mode}`,
+      variant === "live" ? "live" : "scheduled"
+    ];
+
+    if (variant === "live") calloutClasses.push(delayClass);
+
+    return L.divIcon({
+      className: "vehicle-marker-icon",
+      html: `
+        <div class="${calloutClasses.join(" ")}" style="--label-x:${offset.x}px; --label-y:${offset.y}px" aria-label="${variant} ${ariaLabel}">
+          <span class="service-callout-dot"></span>
+          <span class="service-callout-line"></span>
+          <span class="service-callout-chip">${markerLabel}</span>
+        </div>
+      `,
+      iconSize: [104, 72],
+      iconAnchor: [52, 36]
     });
   }
 
@@ -3942,6 +4100,7 @@ function clearRouteLine() {
   }
 
   clearGhostRouteSegmentLine();
+  clearGhostDelayNetworkLines();
 }
 
 function drawTripShapeByShapeId(shapeId) {
@@ -4141,6 +4300,7 @@ function clearBusFocus() {
 function resetAppView(options = {}) {
   hideStopMapAction();
   clearBusFocus();
+  selectedStopId = null;
 
   // Close any active journey preview/results without wiping the user's From/To fields.
   // This lets the user return to the normal map, then tap Show me again to rebuild the route.
@@ -4735,6 +4895,8 @@ function updateBusPositionsLive() {
   const visibleTripIds = new Set();
 
   activeVehicleTripLookupByTripId = {};
+  clearGhostDelayNetworkLines();
+  let ghostDelayLineCount = 0;
 
   getVisibleVehicleTrips().forEach(trip => {
     const scheduledPosition = getVehicleTripPositionNow(trip, currentSeconds);
@@ -4754,6 +4916,11 @@ function updateBusPositionsLive() {
       return;
     }
 
+    if (trackingMode === "ghost" && ghostDelayLineCount < 220) {
+      addGhostDelayNetworkLine(trip, scheduledPosition, livePosition, delaySeconds);
+      ghostDelayLineCount += 1;
+    }
+
     visibleTripIds.add(trip.tripId);
 
     const scheduledIsSelected = selectedTripId === trip.tripId && selectedBusVariant === "scheduled";
@@ -4770,11 +4937,7 @@ function updateBusPositionsLive() {
       marker._tripTrackerIconKey = getServiceMarkerIconKey(trip, false, "scheduled");
 
       marker.on("click", event => {
-        stopLeafletEvent(event);
-
-        drawSpecificTripShape(trip);
-        focusSelectedBus(trip.tripId, "scheduled");
-        renderBusPanel(trip, "scheduled");
+        handleVehicleMarkerClick(event, trip, "scheduled");
       });
 
       busMarkersByTripId[trip.tripId] = marker;
@@ -4796,11 +4959,7 @@ function updateBusPositionsLive() {
       marker._tripTrackerIconKey = getServiceMarkerIconKey(trip, false, "live", delayClass);
 
       marker.on("click", event => {
-        stopLeafletEvent(event);
-
-        drawSpecificTripShape(trip);
-        focusSelectedBus(trip.tripId, "live");
-        renderBusPanel(trip, "live");
+        handleVehicleMarkerClick(event, trip, "live");
       });
 
       liveBusMarkersByTripId[trip.tripId] = marker;
@@ -4921,9 +5080,12 @@ function setTrackingMode(mode) {
     focusSelectedBus(selectedTripId, selectedBusVariant);
   } else {
     clearGhostRouteSegmentLine();
+    if (trackingMode !== "ghost") clearGhostDelayNetworkLines();
     applyBetaMarkerVisibility();
     updateNetworkLayer();
   }
+
+  updateBusPositionsLive();
 }
 
 trackingModeButtons.forEach(button => {
@@ -5157,7 +5319,9 @@ map.on("click", event => {
 closeSelectionPanelButton.addEventListener("click", event => {
   event.preventDefault();
   event.stopPropagation();
-  resetAppView({ resetMap: true });
+
+  const shouldResetMap = Boolean(selectedJourneyOptionTripId || latestJourneyOptions.length);
+  resetAppView({ resetMap: shouldResetMap });
 });
 
 closeSelectionPanelButton.addEventListener("touchstart", event => {
