@@ -78,6 +78,7 @@ let hasWarnedAboutNoActiveTrips = false;
 let userLocationMarker = null;
 let manualSchedulePreviewMode = null;
 let manualSchedulePreviewDateNumber = null;
+let scheduleCycleMode = "today";
 let stopMapActionPoint = null;
 let temporaryMapPointMarker = null;
 
@@ -112,13 +113,6 @@ let journeyAutocompleteRequestIds = { start: 0, end: 0 };
 
 const trackingModeButtons = document.querySelectorAll(".tracking-mode-button");
 
-const temporaryMapPointIcon = L.icon({
-  iconUrl: "location_flag.svg",
-  iconSize: [34, 42],
-  iconAnchor: [8, 38],
-  popupAnchor: [0, -38]
-});
-
 // Set this to false if you only ever want true real-time behaviour.
 // When true, the prototype still shows buses if the current clock time has no active trips in the processed dataset.
 const KEEP_PROTOTYPE_VISIBLE_WHEN_NO_REAL_TIME_BUSES = false;
@@ -133,6 +127,8 @@ const LIVE_NOTICE_SEEN_KEY = "tripTrackerLiveNoticeSeen";
 const locateUserButton = document.getElementById("locateUserButton");
 const themeToggleButton = document.getElementById("themeToggleButton");
 const themeToggleIcon = document.getElementById("themeToggleIcon");
+const scheduleCycleButton = document.getElementById("scheduleCycleButton");
+const scheduleModeLabel = document.getElementById("scheduleModeLabel");
 const journeyOverlay = document.getElementById("journeyOverlay");
 const journeyStartValue = document.getElementById("journeyStartValue");
 const journeyEndValue = document.getElementById("journeyEndValue");
@@ -1879,15 +1875,9 @@ function clearTemporaryMapPointMarker() {
 }
 
 function showTemporaryMapPointMarker(point) {
+  // The visual point indicator is now drawn by the map action callout itself
+  // using a stem + circular anchor. No separate flag marker is needed.
   clearTemporaryMapPointMarker();
-  if (!point) return;
-
-  temporaryMapPointMarker = L.marker([point.lat, point.lon], {
-    icon: temporaryMapPointIcon,
-    interactive: false,
-    keyboard: false,
-    zIndexOffset: 900
-  }).addTo(map);
 }
 
 function hideStopMapAction() {
@@ -3563,6 +3553,53 @@ function applyServiceResult(serviceDate, serviceResult, options = {}) {
   });
 }
 
+
+function getScheduleCycleLabel(mode = scheduleCycleMode) {
+  if (mode === "weekday") return "Weekdays";
+  if (mode === "weekend") return "Weekends";
+  if (mode === "publicHoliday") return "Public Holidays";
+  return "Today";
+}
+
+function updateScheduleCycleUI(mode = scheduleCycleMode) {
+  if (scheduleModeLabel) {
+    scheduleModeLabel.textContent = getScheduleCycleLabel(mode);
+    scheduleModeLabel.classList.add("is-visible");
+  }
+
+  if (scheduleCycleButton) {
+    scheduleCycleButton.classList.toggle("is-active", mode !== "today");
+    scheduleCycleButton.setAttribute("aria-label", `Schedule view: ${getScheduleCycleLabel(mode)}. Tap to change.`);
+    scheduleCycleButton.setAttribute("title", `Schedule view: ${getScheduleCycleLabel(mode)}`);
+  }
+}
+
+function applyTodayScheduleMode() {
+  scheduleCycleMode = "today";
+  manualSchedulePreviewMode = null;
+  manualSchedulePreviewDateNumber = null;
+  hideScheduleNoticeModal();
+  chooseServiceDayOffset();
+  updateScheduleCycleUI("today");
+  clearBusFocus();
+  renderDefaultContextPanel();
+  updateBusPositionsLive();
+  updateNetworkLayer();
+}
+
+function cycleScheduleMode() {
+  const modes = ["today", "weekday", "weekend", "publicHoliday"];
+  const currentIndex = modes.indexOf(scheduleCycleMode);
+  const nextMode = modes[(currentIndex + 1 + modes.length) % modes.length];
+
+  if (nextMode === "today") {
+    applyTodayScheduleMode();
+    return;
+  }
+
+  applyManualSchedulePreview(nextMode);
+}
+
 function showScheduleNoticeModal(reason = "The loaded timetable does not contain services for the current Perth date.") {
   if (!scheduleNoticeModal) return;
   const description = document.getElementById("scheduleNoticeDescription");
@@ -3591,7 +3628,9 @@ function applyManualSchedulePreview(mode) {
 
   manualSchedulePreviewMode = mode;
   manualSchedulePreviewDateNumber = dateNumber;
+  scheduleCycleMode = mode;
   hideScheduleNoticeModal();
+  updateScheduleCycleUI(mode);
   applyServiceResult(dateNumber, result, {
     label: getPreviewModeLabel(mode),
     offset: 0,
@@ -4913,6 +4952,18 @@ if (themeToggleButton) {
   }, { passive: true });
 }
 
+if (scheduleCycleButton) {
+  scheduleCycleButton.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    cycleScheduleMode();
+  });
+
+  scheduleCycleButton.addEventListener("touchstart", event => {
+    event.stopPropagation();
+  }, { passive: true });
+}
+
 
 if (journeyOverlay) {
   journeyOverlay.addEventListener("pointerdown", event => {
@@ -5150,6 +5201,7 @@ if (scheduleNoticeModal) {
 // ---------- App startup ----------
 async function init() {
   updateThemeToggleButton();
+  updateScheduleCycleUI();
   hideSelectionPanel();
 
   await loadCoreData();
