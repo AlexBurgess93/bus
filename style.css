@@ -2974,3 +2974,24 @@ html[data-map-theme="dark"] .journey-use-location-inline {
 .selection-panel.journey-options-mode .journey-option-pill {
   min-height: 78px;
 }
+
+.stop-route-pill.no-active-times {
+  background: #e5e7eb;
+  color: #64748b;
+  opacity: 0.72;
+}
+
+.stop-route-pill.has-active-times {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+html[data-map-theme="dark"] .stop-route-pill.no-active-times {
+  background: rgba(63, 63, 70, 0.72);
+  color: #a1a1aa;
+}
+
+html[data-map-theme="dark"] .stop-route-pill.has-active-times {
+  background: rgba(30, 64, 175, 0.48);
+  color: #bfdbfe;
+}

@@ -43,6 +43,10 @@ let highlightedTripIds = new Set();
 let allShapes = {};
 let allRoutes = [];
 let allTrips = [];
+let visualNetworkTrips = [];
+let routeLookupById = {};
+let routeLookupByShortName = {};
+let stopRoutesByStopId = {};
 let timetableTrips = [];
 let unfilteredTimetableTrips = [];
 let stopUpcoming = {};
@@ -230,6 +234,50 @@ function getRouteDisplayNameForTrip(trip = {}) {
   return String(label || trip.routeShortName || trip.routeLongName || "Route").trim();
 }
 
+function buildRouteLookups() {
+  routeLookupById = {};
+  routeLookupByShortName = {};
+
+  allRoutes.forEach(route => {
+    const id = String(route.id ?? "").trim();
+    const shortName = String(route.shortName ?? "").trim();
+
+    if (id) routeLookupById[id] = route;
+    if (shortName && !routeLookupByShortName[shortName]) {
+      routeLookupByShortName[shortName] = route;
+    }
+  });
+}
+
+function enrichTripFromRoute(trip = {}) {
+  const route = routeLookupById[String(trip.routeId ?? "").trim()] || routeLookupByShortName[String(trip.routeShortName ?? "").trim()];
+
+  if (!route) return trip;
+
+  return {
+    ...trip,
+    routeShortName: trip.routeShortName || route.shortName,
+    routeLongName: trip.routeLongName || route.longName,
+    routeType: trip.routeType ?? route.routeType
+  };
+}
+
+function buildVisualNetworkTrips() {
+  const byShapeId = new Map();
+
+  allTrips.forEach(rawTrip => {
+    if (!rawTrip || !rawTrip.shapeId || !allShapes[rawTrip.shapeId]) return;
+
+    const trip = enrichTripFromRoute(rawTrip);
+
+    if (!byShapeId.has(trip.shapeId)) {
+      byShapeId.set(trip.shapeId, trip);
+    }
+  });
+
+  visualNetworkTrips = Array.from(byShapeId.values());
+}
+
 function readPinState() {
   try {
     const raw = localStorage.getItem(PIN_STORAGE_KEY);
@@ -354,20 +402,38 @@ function togglePinnedStop(stopId) {
 
 function getRoutesForStop(stopId) {
   const routeMap = new Map();
+  const fullRouteLabels = stopRoutesByStopId[stopId] || [];
+
+  fullRouteLabels.forEach(label => {
+    const route = routeLookupByShortName[String(label).trim()];
+    const item = route || { shortName: label };
+    const key = route?.id || `route:${label}`;
+
+    routeMap.set(key, {
+      key,
+      label: String(route?.shortName || label || "Route"),
+      mode: getTransportMode({
+        routeShortName: route?.shortName || label,
+        routeLongName: route?.longName,
+        routeType: route?.routeType
+      }),
+      hasActiveTimes: false
+    });
+  });
+
   const upcoming = stopUpcoming[stopId] || [];
 
   upcoming.forEach(item => {
-    const trip = tripLookupByTripId[item.tripId];
-    if (!trip) return;
-
+    const trip = tripLookupByTripId[item.tripId] || item;
     const key = getTripRouteKey(trip);
-    if (!routeMap.has(key)) {
-      routeMap.set(key, {
-        key,
-        label: getRouteDisplayNameForTrip(trip),
-        mode: getTransportMode(trip)
-      });
-    }
+    const existing = routeMap.get(key);
+
+    routeMap.set(key, {
+      key,
+      label: existing?.label || getRouteDisplayNameForTrip(trip),
+      mode: existing?.mode || getTransportMode(trip),
+      hasActiveTimes: true
+    });
   });
 
   return Array.from(routeMap.values()).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
@@ -621,9 +687,9 @@ function renderStopPanel(stop, upcomingItems) {
   const routeStripHTML = routesForStop.length
     ? routesForStop
         .slice(0, 18)
-        .map(route => `<span class="stop-route-pill stop-route-${escapeHTML(route.mode)}">${escapeHTML(route.label)}</span>`)
+        .map(route => `<span class="stop-route-pill stop-route-${escapeHTML(route.mode)} ${route.hasActiveTimes ? "has-active-times" : "no-active-times"}">${escapeHTML(route.label)}</span>`)
         .join("")
-    : `<span class="stop-route-empty">No active routes found for this stop today.</span>`;
+    : `<span class="stop-route-empty">No routes found for this stop.</span>`;
 
   const upcomingHTML = upcomingItems.length
     ? upcomingItems.map(item => {
@@ -650,7 +716,7 @@ function renderStopPanel(stop, upcomingItems) {
           </button>
         `;
       }).join("")
-    : `<div class="arrival-empty">No active services in the next 30 mins.</div>`;
+    : `<div class="arrival-empty">No active/plannable services in the next 30 mins.</div>`;
 
   selectionPanelContent.innerHTML = `
     <section class="panel-section stop-panel-section">
@@ -1341,9 +1407,8 @@ function updateNetworkLayer() {
   const desiredShapeIds = new Set();
   const tripByShapeId = {};
 
-  timetableTrips.forEach(trip => {
+  visualNetworkTrips.forEach(trip => {
     if (!tripMatchesMapFilters(trip)) return;
-    if (!tripIsActiveAtSeconds(trip, currentSeconds)) return;
 
     const shapeCoords = allShapes[trip.shapeId];
     if (!shapeCoords || !shapeTouchesExpandedViewport(shapeCoords)) return;
@@ -4290,11 +4355,17 @@ async function loadCoreData() {
   serviceCalendarRows = await calendarRes.json();
   serviceCalendarDateRows = await fetchOptionalJSON("data/processed/calendar-dates.json", []);
 
+  buildRouteLookups();
+  allTrips = allTrips.map(enrichTripFromRoute);
+  unfilteredTimetableTrips = unfilteredTimetableTrips.map(enrichTripFromRoute);
+  buildVisualNetworkTrips();
+
   chooseServiceDayOffset();
 
   console.log("Core data loaded");
   console.log("Routes:", allRoutes.length);
   console.log("Trips:", allTrips.length);
+  console.log("Visual network shapes:", visualNetworkTrips.length);
   console.log("Shapes:", Object.keys(allShapes).length);
   console.log("Unfiltered timetable trips:", unfilteredTimetableTrips.length);
   console.log("Today timetable trips:", timetableTrips.length);
@@ -4310,7 +4381,7 @@ async function loadStops() {
   ]);
 
   const stops = await stopsRes.json();
-  await stopRoutesRes.json();
+  stopRoutesByStopId = await stopRoutesRes.json();
 
   stopLookup = createStopLookup(stops);
 
