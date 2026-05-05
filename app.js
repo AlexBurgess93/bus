@@ -145,8 +145,20 @@ const journeyUseLocationInline = document.getElementById("journeyUseLocationInli
 const journeyClearButton = document.getElementById("journeyClearButton");
 const journeySearchButton = document.getElementById("journeySearchButton");
 const stopMapAction = document.getElementById("stopMapAction");
+const appLoadingScreen = document.getElementById("appLoadingScreen");
+const appLoadingText = document.getElementById("appLoadingText");
 
+function setAppLoadingText(message) {
+  if (appLoadingText) appLoadingText.textContent = message;
+}
 
+function hideAppLoadingScreen() {
+  if (!appLoadingScreen) return;
+  appLoadingScreen.classList.add("is-hidden");
+  window.setTimeout(() => {
+    appLoadingScreen.style.display = "none";
+  }, 260);
+}
 
 
 // ---------- Map theme controls ----------
@@ -581,11 +593,10 @@ async function handleVehicleMarkerClick(event, trip, variant = "live") {
 
   const detailedTrip = await ensureTimetableDetailsForTrip(trip);
   if (selectedTripId === trip.tripId) {
-    // Route chunks may arrive after the first tap. Re-run the selected-bus focus
-    // so stop dots + ETA chips are rebuilt from the full stop sequence.
     drawSpecificTripShape(detailedTrip);
     focusSelectedBus(detailedTrip.tripId, variant);
     renderBusPanel(detailedTrip, variant);
+    updateBusPositionsLive();
   }
 }
 
@@ -1139,29 +1150,105 @@ function drawGhostRouteSegmentForTrip(tripId) {
   if (liveBusMarkersByTripId[tripId]) liveBusMarkersByTripId[tripId].setZIndexOffset(1300);
 }
 
+function getTripTerminalStopName(trip) {
+  const stops = Array.isArray(trip?.stops) ? trip.stops : [];
+  const lastStopTime = stops.length ? stops[stops.length - 1] : null;
+  const terminalStop = lastStopTime?.stopId ? stopLookup[lastStopTime.stopId] : null;
+
+  return cleanStopName(terminalStop?.name || trip?.headsign || trip?.routeLongName || "Destination unavailable");
+}
+
+function getTripScheduledSection(trip) {
+  const detailedTrip = tripLookupByTripId[trip?.tripId] || trip;
+  const position = latestTripPositionsByTripId[trip?.tripId];
+
+  if (position?.stopA?.name && position?.stopB?.name) {
+    return {
+      fromStopName: cleanStopName(position.stopA.name),
+      toStopName: cleanStopName(position.stopB.name),
+      hasSection: true
+    };
+  }
+
+  if (!Array.isArray(detailedTrip?.stops) || detailedTrip.stops.length < 2) {
+    return {
+      fromStopName: "",
+      toStopName: "",
+      hasSection: false
+    };
+  }
+
+  const currentSeconds = getCurrentSecondsPrecise();
+
+  for (let i = 0; i < detailedTrip.stops.length - 1; i++) {
+    const departSeconds = timeToSeconds(detailedTrip.stops[i].departureTime || detailedTrip.stops[i].arrivalTime);
+    const arriveSeconds = timeToSeconds(detailedTrip.stops[i + 1].arrivalTime || detailedTrip.stops[i + 1].departureTime);
+
+    if (Number.isNaN(departSeconds) || Number.isNaN(arriveSeconds)) continue;
+
+    if (currentSeconds >= departSeconds && currentSeconds <= arriveSeconds) {
+      const fromStop = stopLookup[detailedTrip.stops[i].stopId];
+      const toStop = stopLookup[detailedTrip.stops[i + 1].stopId];
+
+      if (fromStop && toStop) {
+        return {
+          fromStopName: cleanStopName(fromStop.name),
+          toStopName: cleanStopName(toStop.name),
+          hasSection: true
+        };
+      }
+    }
+  }
+
+  return {
+    fromStopName: "",
+    toStopName: "",
+    hasSection: false
+  };
+}
+
 function renderBusPanel(trip, variant = selectedBusVariant) {
   selectedPanelType = "bus";
 
-  const latestPosition = latestTripPositionsByTripId[trip.tripId];
-  const fromStopName = latestPosition?.stopA?.name
-    ? cleanStopName(latestPosition.stopA.name)
-    : "Current stop unavailable";
-  const toStopName = latestPosition?.stopB?.name
-    ? cleanStopName(latestPosition.stopB.name)
-    : "Next stop unavailable";
+  const detailedTrip = tripLookupByTripId[trip?.tripId] || trip;
+  const terminalName = getTripTerminalStopName(detailedTrip);
+  const section = getTripScheduledSection(detailedTrip);
 
-  const delaySeconds = getStableLiveDelaySeconds(trip.tripId);
+  const delaySeconds = getStableLiveDelaySeconds(detailedTrip.tripId);
   const delayStatus = getDelayStatus(delaySeconds);
-  const variantLabel = variant === "scheduled" ? "Scheduled position" : "Simulated live position";
+
+  const sectionHTML = section.hasSection
+    ? `
+      <div class="between-card">
+        <div class="between-label">Current section</div>
+        <div class="between-carousel" aria-label="Between ${escapeHTML(section.fromStopName)} and ${escapeHTML(section.toStopName)}">
+          <div class="between-carousel-track">
+            <span class="between-stop between-stop-from">${escapeHTML(section.fromStopName)}</span>
+            <img src="between_arrow.svg" alt="to" class="between-arrow-icon">
+            <span class="between-stop between-stop-to">${escapeHTML(section.toStopName)}</span>
+          </div>
+        </div>
+      </div>
+    `
+    : `
+      <div class="between-card between-card-muted">
+        <div class="between-label">Route stops</div>
+        <div class="between-carousel">
+          <div class="between-carousel-track">
+            <span class="between-stop">Scheduled stop times shown on map</span>
+          </div>
+        </div>
+      </div>
+    `;
 
   selectionPanelContent.innerHTML = `
     <section class="panel-section bus-panel-section">
       <div class="bus-summary-row">
-        <div class="route-badge route-badge-${escapeHTML(getTransportMode(trip))}">${escapeHTML(getTransportLabel(trip))}</div>
+        <div class="route-badge route-badge-${escapeHTML(getTransportMode(detailedTrip))}">${escapeHTML(getTransportLabel(detailedTrip))}</div>
 
         <div class="panel-text-stack">
-          <div class="panel-subtitle">${escapeHTML(variantLabel)}</div>
-          <div class="panel-title">${escapeHTML(trip.headsign)}</div>
+          <div class="panel-subtitle">Terminating at:</div>
+          <div class="panel-title">${escapeHTML(terminalName)}</div>
         </div>
 
         <div class="delay-chip ${escapeHTML(delayStatus.className)}" title="${escapeHTML(delayStatus.detail)}">
@@ -1170,21 +1257,12 @@ function renderBusPanel(trip, variant = selectedBusVariant) {
         </div>
       </div>
 
-      <div class="between-card">
-        <div class="between-label">Between</div>
-        <div class="between-carousel" aria-label="Between ${escapeHTML(fromStopName)} and ${escapeHTML(toStopName)}">
-          <div class="between-carousel-track">
-            <span class="between-stop between-stop-from">${escapeHTML(fromStopName)}</span>
-            <img src="between_arrow.svg" alt="to" class="between-arrow-icon">
-            <span class="between-stop between-stop-to">${escapeHTML(toStopName)}</span>
-          </div>
-        </div>
-      </div>
+      ${sectionHTML}
     </section>
   `;
 
   applyBetweenCarouselIfNeeded();
-  showMapPinForTrip(trip, variant);
+  showMapPinForTrip(detailedTrip, variant);
   showSelectionPanel();
 }
 
@@ -3689,10 +3767,6 @@ function getScheduleCycleLabel(mode = scheduleCycleMode) {
 function updateScheduleCycleUI(mode = scheduleCycleMode) {
   if (scheduleModeLabel) {
     scheduleModeLabel.textContent = getScheduleCycleLabel(mode);
-
-    // Snappy reveal beside the calendar button: show instantly, hold briefly,
-    // then fade out only. Removing the fading class first prevents a slow fade-in.
-    scheduleModeLabel.classList.remove("is-fading");
     scheduleModeLabel.classList.add("is-visible");
 
     if (scheduleModeLabelHideTimer) {
@@ -3700,7 +3774,6 @@ function updateScheduleCycleUI(mode = scheduleCycleMode) {
     }
 
     scheduleModeLabelHideTimer = window.setTimeout(() => {
-      scheduleModeLabel.classList.add("is-fading");
       scheduleModeLabel.classList.remove("is-visible");
     }, 2000);
   }
@@ -4936,7 +5009,11 @@ function updateBusPositionsLive() {
   clearGhostDelayNetworkLines();
   let ghostDelayLineCount = 0;
 
-  getVisibleVehicleTrips().forEach(trip => {
+  getVisibleVehicleTrips().forEach(rawTrip => {
+    const trip = tripLookupByTripId[rawTrip.tripId]?.stops?.length
+      ? tripLookupByTripId[rawTrip.tripId]
+      : rawTrip;
+
     const scheduledPosition = getVehicleTripPositionNow(trip, currentSeconds);
 
     if (!scheduledPosition) return;
@@ -5406,16 +5483,22 @@ async function init() {
   updateScheduleCycleUI();
   hideSelectionPanel();
 
+  setAppLoadingText("Loading timetable data…");
   await loadCoreData();
+
+  setAppLoadingText("Loading stops and routes…");
   renderDefaultContextPanel();
   await loadStops();
   applyStopHitAreaStylesForZoom();
   renderJourneyOverlay();
 
+  setAppLoadingText("Drawing active services…");
   map.invalidateSize();
   updateBusPositionsLive();
   setTrackingMode("scheduled");
   updateNetworkLayer();
+
+  hideAppLoadingScreen();
 
   busUpdateTimerId = window.setInterval(() => {
     if (!isMapMoving) {
@@ -5424,4 +5507,7 @@ async function init() {
   }, VEHICLE_UPDATE_INTERVAL_MS);
 }
 
-init().catch(err => console.error(err));
+init().catch(err => {
+  console.error(err);
+  setAppLoadingText("Could not load map data. Check the console and processed data files.");
+});

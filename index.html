@@ -20,6 +20,14 @@
   <main>
     <div id="map"></div>
 
+    <div id="appLoadingScreen" class="app-loading-screen" role="status" aria-live="polite">
+      <div class="app-loading-card">
+        <div class="app-loading-spinner" aria-hidden="true"></div>
+        <div class="app-loading-title">Loading Trip Tracker</div>
+        <div id="appLoadingText" class="app-loading-text">Preparing map data…</div>
+      </div>
+    </div>
+
     <button id="locateUserButton" class="map-round-button locate-button" type="button" aria-label="Use my location to find the nearest stop"><img src="gps_icon.svg" alt="" aria-hidden="true" /></button>
 
     <button id="themeToggleButton" class="map-round-button theme-toggle-button" type="button" aria-label="Enable dark map"><img id="themeToggleIcon" src="enable_dark_mode.svg" alt="" aria-hidden="true" /></button>
