@@ -3339,8 +3339,7 @@ html[data-map-theme="dark"] .ghost-network-delay-line {
 }
 
 
-/* Temporary product decision: hide the From/To journey planner.
-   The app is stop-to-stop only until journey planning is refined. */
+/* Temporary: hide the From/To journey planner while journey planning is stop-to-stop only. */
 #journeyOverlay {
   display: none !important;
 }

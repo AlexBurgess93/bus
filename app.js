@@ -581,7 +581,10 @@ async function handleVehicleMarkerClick(event, trip, variant = "live") {
 
   const detailedTrip = await ensureTimetableDetailsForTrip(trip);
   if (selectedTripId === trip.tripId) {
+    // Route chunks may arrive after the first tap. Re-run the selected-bus focus
+    // so stop dots + ETA chips are rebuilt from the full stop sequence.
     drawSpecificTripShape(detailedTrip);
+    focusSelectedBus(detailedTrip.tripId, variant);
     renderBusPanel(detailedTrip, variant);
   }
 }
@@ -1539,7 +1542,8 @@ function getFutureStopDetailsForTrip(tripId) {
 }
 
 function highlightFutureStopMarkersForTrip(tripId) {
-  const { futureStopIds, nextStopId } = getFutureStopDetailsForTrip(tripId);
+  const { trip, futureStopIds, nextStopId } = getFutureStopDetailsForTrip(tripId);
+  const allTripStopIds = new Set((trip?.stops || []).map(stopTime => stopTime.stopId).filter(Boolean));
 
   Object.keys(stopMarkersByStopId).forEach(stopId => {
     const marker = stopMarkersByStopId[stopId];
@@ -1565,6 +1569,21 @@ function highlightFutureStopMarkersForTrip(tripId) {
         fillColor: "#ffffff",
         fillOpacity: 1,
         opacity: 1
+      });
+      marker.bringToFront();
+      return;
+    }
+
+    if (allTripStopIds.has(stopId)) {
+      // Past/earlier stops on the selected trip still exist on the route. Keep
+      // them visible but quieter so the route does not look like it has gaps.
+      marker.setStyle({
+        radius: 4,
+        color: "#64748b",
+        weight: 1.4,
+        fillColor: "#ffffff",
+        fillOpacity: 0.72,
+        opacity: 0.72
       });
       marker.bringToFront();
       return;
@@ -3957,9 +3976,8 @@ function getMarkerLabelOffset(trip = {}, variant = "live") {
 }
 function shouldCenterServiceChipAtCurrentZoom() {
   const maxZoom = map.getMaxZoom ? map.getMaxZoom() : 19;
-
-  // GPS locate lands at maxZoom - 4. From that zoom level inward,
-  // keep the service chip centred over the vehicle so it sits on the road.
+  // GPS locate lands around maxZoom - 4. From that level inward, keep service
+  // chips directly on the road; further out, keep the existing offset spread.
   return map.getZoom() >= maxZoom - 4;
 }
 
@@ -3968,8 +3986,11 @@ function createBusIcon(trip, isSelected = false, variant = "scheduled", delayCla
   const markerLabel = escapeHTML(getTransportLabel(trip));
   const ariaLabel = escapeHTML(getTransportAriaLabel(trip));
   const compact = shouldUseCompactServiceMarker(isSelected);
+  const ghostScheduledDotOnly = trackingMode === "ghost" && variant === "scheduled";
 
-  if (compact) {
+  // In Compare mode, the scheduled/ghost position should be a quiet dot only.
+  // The only visible route number should be the coloured simulated-live marker.
+  if (compact || ghostScheduledDotOnly) {
     const dotClasses = [
       "service-dot-marker",
       `transport-${mode}`,
@@ -4051,6 +4072,7 @@ function getServiceMarkerIconKey(trip, isSelected = false, variant = "scheduled"
     isSelected ? "selected" : "normal",
     compact ? "compact" : "detailed",
     shouldCenterServiceChipAtCurrentZoom() ? "chip-centered" : "chip-offset",
+    trackingMode,
     currentMapTheme
   ].join("|");
 }
@@ -4450,12 +4472,9 @@ function showLocationMessage(title, message) {
 function focusUserLocation(lat, lon) {
   clearBusFocus();
 
-  showLocationMessage("Location found", "Tap a stop to view services or begin a stop-to-stop journey.");
+  showLocationMessage("Start set from your location", "Nearest stop selected in the background. Tap a stop, then set it as your destination.");
 
-  const maxZoom = map.getMaxZoom ? map.getMaxZoom() : 19;
-  const gpsZoom = Math.max(0, maxZoom - 4);
-
-  map.setView([lat, lon], Math.max(map.getZoom(), gpsZoom), {
+  map.setView([lat, lon], Math.max(map.getZoom(), 16), {
     animate: true
   });
 }
