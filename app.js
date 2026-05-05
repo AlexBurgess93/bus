@@ -3689,6 +3689,10 @@ function getScheduleCycleLabel(mode = scheduleCycleMode) {
 function updateScheduleCycleUI(mode = scheduleCycleMode) {
   if (scheduleModeLabel) {
     scheduleModeLabel.textContent = getScheduleCycleLabel(mode);
+
+    // Snappy reveal beside the calendar button: show instantly, hold briefly,
+    // then fade out only. Removing the fading class first prevents a slow fade-in.
+    scheduleModeLabel.classList.remove("is-fading");
     scheduleModeLabel.classList.add("is-visible");
 
     if (scheduleModeLabelHideTimer) {
@@ -3696,6 +3700,7 @@ function updateScheduleCycleUI(mode = scheduleCycleMode) {
     }
 
     scheduleModeLabelHideTimer = window.setTimeout(() => {
+      scheduleModeLabel.classList.add("is-fading");
       scheduleModeLabel.classList.remove("is-visible");
     }, 2000);
   }
