@@ -3509,3 +3509,14 @@ html[data-map-theme="dark"] .map-loading-street {
     max-width: min(190px, calc(100vw - 84px)) !important;
   }
 }
+
+/* Stop indexing patch: when detailed stop data is still loading, avoid showing a fake current/next stop. */
+.between-card-muted {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+html[data-map-theme="dark"] .between-card-muted {
+  background: rgba(39, 39, 42, 0.94);
+  border-color: rgba(82, 82, 91, 0.9);
+}

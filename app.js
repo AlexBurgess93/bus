@@ -584,8 +584,10 @@ async function handleVehicleMarkerClick(event, trip, variant = "live") {
 
   const detailedTrip = await ensureTimetableDetailsForTrip(trip);
   if (selectedTripId === trip.tripId) {
-    drawSpecificTripShape(detailedTrip);
-    renderBusPanel(detailedTrip, variant);
+    const panelTrip = detailedTrip?.stops?.length ? detailedTrip : trip;
+    drawSpecificTripShape(panelTrip);
+    focusSelectedBus(panelTrip.tripId, variant);
+    renderBusPanel(panelTrip, variant);
   }
 }
 
@@ -1139,37 +1141,36 @@ function drawGhostRouteSegmentForTrip(tripId) {
   if (liveBusMarkersByTripId[tripId]) liveBusMarkersByTripId[tripId].setZIndexOffset(1300);
 }
 
+function getTripTerminusName(trip = {}) {
+  const explicitHeadsign = String(trip.headsign || "").trim();
+  if (explicitHeadsign) return explicitHeadsign;
+
+  const stops = Array.isArray(trip.stops) ? trip.stops : [];
+  const lastStopTime = stops[stops.length - 1];
+  const lastStop = lastStopTime?.stopId ? stopLookup[lastStopTime.stopId] : null;
+
+  return lastStop?.name ? cleanStopName(lastStop.name) : "Terminus unavailable";
+}
+
 function renderBusPanel(trip, variant = selectedBusVariant) {
   selectedPanelType = "bus";
 
+  const detailedTrip = tripLookupByTripId[trip.tripId] || trip;
   const latestPosition = latestTripPositionsByTripId[trip.tripId];
   const fromStopName = latestPosition?.stopA?.name
     ? cleanStopName(latestPosition.stopA.name)
-    : "Current stop unavailable";
+    : "";
   const toStopName = latestPosition?.stopB?.name
     ? cleanStopName(latestPosition.stopB.name)
-    : "Next stop unavailable";
+    : "";
 
+  const hasBetweenStops = Boolean(fromStopName && toStopName);
   const delaySeconds = getStableLiveDelaySeconds(trip.tripId);
   const delayStatus = getDelayStatus(delaySeconds);
-  const variantLabel = variant === "scheduled" ? "Scheduled position" : "Simulated live position";
+  const terminusName = getTripTerminusName(detailedTrip);
 
-  selectionPanelContent.innerHTML = `
-    <section class="panel-section bus-panel-section">
-      <div class="bus-summary-row">
-        <div class="route-badge route-badge-${escapeHTML(getTransportMode(trip))}">${escapeHTML(getTransportLabel(trip))}</div>
-
-        <div class="panel-text-stack">
-          <div class="panel-subtitle">${escapeHTML(variantLabel)}</div>
-          <div class="panel-title">${escapeHTML(trip.headsign)}</div>
-        </div>
-
-        <div class="delay-chip ${escapeHTML(delayStatus.className)}" title="${escapeHTML(delayStatus.detail)}">
-          <span class="delay-value">${escapeHTML(delayStatus.text)}</span>
-          <span class="delay-detail">${escapeHTML(delayStatus.detail)}</span>
-        </div>
-      </div>
-
+  const betweenHTML = hasBetweenStops
+    ? `
       <div class="between-card">
         <div class="between-label">Between</div>
         <div class="between-carousel" aria-label="Between ${escapeHTML(fromStopName)} and ${escapeHTML(toStopName)}">
@@ -1180,6 +1181,31 @@ function renderBusPanel(trip, variant = selectedBusVariant) {
           </div>
         </div>
       </div>
+    `
+    : `
+      <div class="between-card between-card-muted">
+        <div class="between-label">Stops</div>
+        <div class="panel-subtitle">Loading scheduled stop sequence…</div>
+      </div>
+    `;
+
+  selectionPanelContent.innerHTML = `
+    <section class="panel-section bus-panel-section">
+      <div class="bus-summary-row">
+        <div class="route-badge route-badge-${escapeHTML(getTransportMode(trip))}">${escapeHTML(getTransportLabel(trip))}</div>
+
+        <div class="panel-text-stack">
+          <div class="panel-subtitle">Terminating at:</div>
+          <div class="panel-title">${escapeHTML(terminusName)}</div>
+        </div>
+
+        <div class="delay-chip ${escapeHTML(delayStatus.className)}" title="${escapeHTML(delayStatus.detail)}">
+          <span class="delay-value">${escapeHTML(delayStatus.text)}</span>
+          <span class="delay-detail">${escapeHTML(delayStatus.detail)}</span>
+        </div>
+      </div>
+
+      ${betweenHTML}
     </section>
   `;
 
@@ -1479,77 +1505,130 @@ function highlightRelevantStopMarkers(selectedStopId, upcomingItems) {
   });
 }
 
-function getFutureStopDetailsForTrip(tripId) {
-  const trip = tripLookupByTripId[tripId];
+function getDetailedTripForStopSequence(tripId) {
+  return tripLookupByTripId[tripId]
+    || activeVehicleTripLookupByTripId[tripId]
+    || timetableTrips.find(item => item.tripId === tripId)
+    || vehicleTrips.find(item => item.tripId === tripId)
+    || null;
+}
 
-  if (!trip || !trip.stops || trip.stops.length === 0) {
+function normaliseStopTimeSeconds(stopTime, field = "arrivalTime") {
+  const primary = timeToSeconds(stopTime?.[field]);
+  if (!Number.isNaN(primary)) return primary;
+
+  const fallbackField = field === "arrivalTime" ? "departureTime" : "arrivalTime";
+  const fallback = timeToSeconds(stopTime?.[fallbackField]);
+  return Number.isNaN(fallback) ? null : fallback;
+}
+
+function getScheduledStopTimelineForTrip(tripId) {
+  const trip = getDetailedTripForStopSequence(tripId);
+  const stops = Array.isArray(trip?.stops) ? trip.stops : [];
+  const timeline = [];
+
+  stops.forEach((stopTime, index) => {
+    const stop = stopLookup[stopTime.stopId];
+    if (!stop) return;
+
+    const arrivalSeconds = normaliseStopTimeSeconds(stopTime, "arrivalTime");
+    const departureSeconds = normaliseStopTimeSeconds(stopTime, "departureTime");
+
+    if (arrivalSeconds === null && departureSeconds === null) return;
+
+    timeline.push({
+      index,
+      stop,
+      stopId: stopTime.stopId,
+      stopTime,
+      arrivalSeconds,
+      departureSeconds,
+      sortSeconds: arrivalSeconds ?? departureSeconds
+    });
+  });
+
+  return { trip, timeline };
+}
+
+function getScheduledStopIndexDetails(tripId) {
+  const { trip, timeline } = getScheduledStopTimelineForTrip(tripId);
+
+  if (!trip || timeline.length === 0) {
     return {
-      trip: null,
+      trip,
+      timeline,
+      allStopIds: new Set(),
+      pastStopIds: new Set(),
       futureStopIds: new Set(),
-      nextStopId: null
+      nextStopId: null,
+      currentStopIndex: -1,
+      firstFutureTimelineIndex: -1
     };
   }
 
   const currentSeconds = getCurrentSecondsPrecise();
-  const firstDepartureSeconds = timeToSeconds(trip.stops[0].departureTime);
-  const lastArrivalSeconds = timeToSeconds(trip.stops[trip.stops.length - 1].arrivalTime);
+  let firstFutureTimelineIndex = timeline.findIndex(item => {
+    const arrivalSeconds = item.arrivalSeconds ?? item.departureSeconds;
+    const departureSeconds = item.departureSeconds ?? item.arrivalSeconds;
+    return arrivalSeconds >= currentSeconds || departureSeconds >= currentSeconds;
+  });
 
-  if (currentSeconds > lastArrivalSeconds) {
-    return {
-      trip,
-      futureStopIds: new Set(),
-      nextStopId: null
-    };
+  if (firstFutureTimelineIndex === -1) {
+    firstFutureTimelineIndex = timeline.length - 1;
   }
 
-  let firstFutureStopIndex = 0;
-
-  if (currentSeconds >= firstDepartureSeconds) {
-    firstFutureStopIndex = trip.stops.findIndex(stopTime => {
-      const arrivalSeconds = timeToSeconds(stopTime.arrivalTime);
-      const departureSeconds = timeToSeconds(stopTime.departureTime);
-
-      return arrivalSeconds >= currentSeconds || departureSeconds >= currentSeconds;
-    });
-
-    if (firstFutureStopIndex === -1) {
-      return {
-        trip,
-        futureStopIds: new Set(),
-        nextStopId: null
-      };
-    }
-
-    const firstFutureStop = trip.stops[firstFutureStopIndex];
-    const firstFutureDepartureSeconds = timeToSeconds(firstFutureStop.departureTime);
-
-    if (currentSeconds > firstFutureDepartureSeconds) {
-      firstFutureStopIndex += 1;
-    }
-  }
-
+  const allStopIds = new Set();
+  const pastStopIds = new Set();
   const futureStopIds = new Set();
 
-  for (let i = firstFutureStopIndex; i < trip.stops.length; i++) {
-    futureStopIds.add(trip.stops[i].stopId);
-  }
+  timeline.forEach((item, timelineIndex) => {
+    allStopIds.add(item.stopId);
+
+    if (timelineIndex < firstFutureTimelineIndex) {
+      pastStopIds.add(item.stopId);
+    } else {
+      futureStopIds.add(item.stopId);
+    }
+  });
 
   return {
     trip,
+    timeline,
+    allStopIds,
+    pastStopIds,
     futureStopIds,
-    nextStopId: trip.stops[firstFutureStopIndex]?.stopId || null
+    nextStopId: timeline[firstFutureTimelineIndex]?.stopId || null,
+    currentStopIndex: Math.max(0, firstFutureTimelineIndex - 1),
+    firstFutureTimelineIndex
   };
 }
 
+function getFutureStopDetailsForTrip(tripId) {
+  return getScheduledStopIndexDetails(tripId);
+}
+
 function highlightFutureStopMarkersForTrip(tripId) {
-  const { futureStopIds, nextStopId } = getFutureStopDetailsForTrip(tripId);
+  const { allStopIds, pastStopIds, futureStopIds, nextStopId } = getScheduledStopIndexDetails(tripId);
+  const hasTripStops = allStopIds.size > 0;
 
   Object.keys(stopMarkersByStopId).forEach(stopId => {
     const marker = stopMarkersByStopId[stopId];
 
+    if (!hasTripStops) {
+      marker.setStyle({
+        radius: 3,
+        color: "#cbd5e1",
+        weight: 1,
+        fillColor: "#e5e7eb",
+        fillOpacity: 0.08,
+        opacity: 0.12
+      });
+      return;
+    }
+
     if (stopId === nextStopId) {
       marker.setStyle({
-        radius: 7,
+        radius: 8,
         color: "#92400e",
         weight: 3,
         fillColor: "#f59e0b",
@@ -1570,6 +1649,18 @@ function highlightFutureStopMarkersForTrip(tripId) {
         opacity: 1
       });
       marker.bringToFront();
+      return;
+    }
+
+    if (pastStopIds.has(stopId)) {
+      marker.setStyle({
+        radius: 4,
+        color: "#94a3b8",
+        weight: 1.3,
+        fillColor: "#f8fafc",
+        fillOpacity: 0.9,
+        opacity: 0.42
+      });
       return;
     }
 
@@ -4187,25 +4278,22 @@ function getEtaText(arrivalSeconds, currentSeconds) {
 function drawEtaMarkersForTrip(tripId) {
   clearEtaMarkers();
 
-  const trip = tripLookupByTripId[tripId] || timetableTrips.find(item => item.tripId === tripId);
-
-  if (!trip || !trip.stops || trip.stops.length === 0) return;
+  const { timeline, firstFutureTimelineIndex } = getScheduledStopIndexDetails(tripId);
+  if (!timeline.length || firstFutureTimelineIndex < 0) return;
 
   const currentSeconds = getCurrentSecondsPrecise();
-  const futureStops = trip.stops
-    .filter(stopTime => {
-      const arrivalSeconds = timeToSeconds(stopTime.arrivalTime);
-      return !Number.isNaN(arrivalSeconds) && arrivalSeconds >= currentSeconds;
-    })
+  const futureTimeline = timeline
+    .slice(firstFutureTimelineIndex)
+    .filter(item => item.arrivalSeconds !== null || item.departureSeconds !== null)
     .slice(0, 12);
 
-  futureStops.forEach((stopTime, index) => {
-    const stop = stopLookup[stopTime.stopId];
+  futureTimeline.forEach((item, index) => {
+    const stop = item.stop;
     if (!stop) return;
 
-    const arrivalSeconds = timeToSeconds(stopTime.arrivalTime);
+    const arrivalSeconds = item.arrivalSeconds ?? item.departureSeconds;
     const etaText = getEtaText(arrivalSeconds, currentSeconds);
-    const scheduledClock = formatScheduledClockTime(stopTime.arrivalTime);
+    const scheduledClock = formatScheduledClockTime(item.stopTime.arrivalTime || item.stopTime.departureTime);
 
     const marker = L.marker([stop.lat, stop.lon], {
       icon: L.divIcon({
@@ -4225,6 +4313,7 @@ function drawEtaMarkersForTrip(tripId) {
     etaMarkers.push(marker);
   });
 }
+
 
 function focusSelectedBus(tripId, variant = selectedBusVariant) {
   selectedTripId = tripId;
