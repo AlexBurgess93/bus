@@ -131,6 +131,9 @@ const themeToggleButton = document.getElementById("themeToggleButton");
 const themeToggleIcon = document.getElementById("themeToggleIcon");
 const scheduleCycleButton = document.getElementById("scheduleCycleButton");
 const scheduleModeLabel = document.getElementById("scheduleModeLabel");
+const mapLoadingOverlay = document.getElementById("mapLoadingOverlay");
+const mapLoadingText = document.getElementById("mapLoadingText");
+let mapLoadingDotsTimer = null;
 const journeyOverlay = document.getElementById("journeyOverlay");
 const journeyStartValue = document.getElementById("journeyStartValue");
 const journeyEndValue = document.getElementById("journeyEndValue");
@@ -145,20 +148,8 @@ const journeyUseLocationInline = document.getElementById("journeyUseLocationInli
 const journeyClearButton = document.getElementById("journeyClearButton");
 const journeySearchButton = document.getElementById("journeySearchButton");
 const stopMapAction = document.getElementById("stopMapAction");
-const appLoadingScreen = document.getElementById("appLoadingScreen");
-const appLoadingText = document.getElementById("appLoadingText");
 
-function setAppLoadingText(message) {
-  if (appLoadingText) appLoadingText.textContent = message;
-}
 
-function hideAppLoadingScreen() {
-  if (!appLoadingScreen) return;
-  appLoadingScreen.classList.add("is-hidden");
-  window.setTimeout(() => {
-    appLoadingScreen.style.display = "none";
-  }, 260);
-}
 
 
 // ---------- Map theme controls ----------
@@ -594,9 +585,7 @@ async function handleVehicleMarkerClick(event, trip, variant = "live") {
   const detailedTrip = await ensureTimetableDetailsForTrip(trip);
   if (selectedTripId === trip.tripId) {
     drawSpecificTripShape(detailedTrip);
-    focusSelectedBus(detailedTrip.tripId, variant);
     renderBusPanel(detailedTrip, variant);
-    updateBusPositionsLive();
   }
 }
 
@@ -1150,105 +1139,29 @@ function drawGhostRouteSegmentForTrip(tripId) {
   if (liveBusMarkersByTripId[tripId]) liveBusMarkersByTripId[tripId].setZIndexOffset(1300);
 }
 
-function getTripTerminalStopName(trip) {
-  const stops = Array.isArray(trip?.stops) ? trip.stops : [];
-  const lastStopTime = stops.length ? stops[stops.length - 1] : null;
-  const terminalStop = lastStopTime?.stopId ? stopLookup[lastStopTime.stopId] : null;
-
-  return cleanStopName(terminalStop?.name || trip?.headsign || trip?.routeLongName || "Destination unavailable");
-}
-
-function getTripScheduledSection(trip) {
-  const detailedTrip = tripLookupByTripId[trip?.tripId] || trip;
-  const position = latestTripPositionsByTripId[trip?.tripId];
-
-  if (position?.stopA?.name && position?.stopB?.name) {
-    return {
-      fromStopName: cleanStopName(position.stopA.name),
-      toStopName: cleanStopName(position.stopB.name),
-      hasSection: true
-    };
-  }
-
-  if (!Array.isArray(detailedTrip?.stops) || detailedTrip.stops.length < 2) {
-    return {
-      fromStopName: "",
-      toStopName: "",
-      hasSection: false
-    };
-  }
-
-  const currentSeconds = getCurrentSecondsPrecise();
-
-  for (let i = 0; i < detailedTrip.stops.length - 1; i++) {
-    const departSeconds = timeToSeconds(detailedTrip.stops[i].departureTime || detailedTrip.stops[i].arrivalTime);
-    const arriveSeconds = timeToSeconds(detailedTrip.stops[i + 1].arrivalTime || detailedTrip.stops[i + 1].departureTime);
-
-    if (Number.isNaN(departSeconds) || Number.isNaN(arriveSeconds)) continue;
-
-    if (currentSeconds >= departSeconds && currentSeconds <= arriveSeconds) {
-      const fromStop = stopLookup[detailedTrip.stops[i].stopId];
-      const toStop = stopLookup[detailedTrip.stops[i + 1].stopId];
-
-      if (fromStop && toStop) {
-        return {
-          fromStopName: cleanStopName(fromStop.name),
-          toStopName: cleanStopName(toStop.name),
-          hasSection: true
-        };
-      }
-    }
-  }
-
-  return {
-    fromStopName: "",
-    toStopName: "",
-    hasSection: false
-  };
-}
-
 function renderBusPanel(trip, variant = selectedBusVariant) {
   selectedPanelType = "bus";
 
-  const detailedTrip = tripLookupByTripId[trip?.tripId] || trip;
-  const terminalName = getTripTerminalStopName(detailedTrip);
-  const section = getTripScheduledSection(detailedTrip);
+  const latestPosition = latestTripPositionsByTripId[trip.tripId];
+  const fromStopName = latestPosition?.stopA?.name
+    ? cleanStopName(latestPosition.stopA.name)
+    : "Current stop unavailable";
+  const toStopName = latestPosition?.stopB?.name
+    ? cleanStopName(latestPosition.stopB.name)
+    : "Next stop unavailable";
 
-  const delaySeconds = getStableLiveDelaySeconds(detailedTrip.tripId);
+  const delaySeconds = getStableLiveDelaySeconds(trip.tripId);
   const delayStatus = getDelayStatus(delaySeconds);
-
-  const sectionHTML = section.hasSection
-    ? `
-      <div class="between-card">
-        <div class="between-label">Current section</div>
-        <div class="between-carousel" aria-label="Between ${escapeHTML(section.fromStopName)} and ${escapeHTML(section.toStopName)}">
-          <div class="between-carousel-track">
-            <span class="between-stop between-stop-from">${escapeHTML(section.fromStopName)}</span>
-            <img src="between_arrow.svg" alt="to" class="between-arrow-icon">
-            <span class="between-stop between-stop-to">${escapeHTML(section.toStopName)}</span>
-          </div>
-        </div>
-      </div>
-    `
-    : `
-      <div class="between-card between-card-muted">
-        <div class="between-label">Route stops</div>
-        <div class="between-carousel">
-          <div class="between-carousel-track">
-            <span class="between-stop">Scheduled stop times shown on map</span>
-          </div>
-        </div>
-      </div>
-    `;
+  const variantLabel = variant === "scheduled" ? "Scheduled position" : "Simulated live position";
 
   selectionPanelContent.innerHTML = `
     <section class="panel-section bus-panel-section">
       <div class="bus-summary-row">
-        <div class="route-badge route-badge-${escapeHTML(getTransportMode(detailedTrip))}">${escapeHTML(getTransportLabel(detailedTrip))}</div>
+        <div class="route-badge route-badge-${escapeHTML(getTransportMode(trip))}">${escapeHTML(getTransportLabel(trip))}</div>
 
         <div class="panel-text-stack">
-          <div class="panel-subtitle">Terminating at:</div>
-          <div class="panel-title">${escapeHTML(terminalName)}</div>
+          <div class="panel-subtitle">${escapeHTML(variantLabel)}</div>
+          <div class="panel-title">${escapeHTML(trip.headsign)}</div>
         </div>
 
         <div class="delay-chip ${escapeHTML(delayStatus.className)}" title="${escapeHTML(delayStatus.detail)}">
@@ -1257,12 +1170,21 @@ function renderBusPanel(trip, variant = selectedBusVariant) {
         </div>
       </div>
 
-      ${sectionHTML}
+      <div class="between-card">
+        <div class="between-label">Between</div>
+        <div class="between-carousel" aria-label="Between ${escapeHTML(fromStopName)} and ${escapeHTML(toStopName)}">
+          <div class="between-carousel-track">
+            <span class="between-stop between-stop-from">${escapeHTML(fromStopName)}</span>
+            <img src="between_arrow.svg" alt="to" class="between-arrow-icon">
+            <span class="between-stop between-stop-to">${escapeHTML(toStopName)}</span>
+          </div>
+        </div>
+      </div>
     </section>
   `;
 
   applyBetweenCarouselIfNeeded();
-  showMapPinForTrip(detailedTrip, variant);
+  showMapPinForTrip(trip, variant);
   showSelectionPanel();
 }
 
@@ -1620,8 +1542,7 @@ function getFutureStopDetailsForTrip(tripId) {
 }
 
 function highlightFutureStopMarkersForTrip(tripId) {
-  const { trip, futureStopIds, nextStopId } = getFutureStopDetailsForTrip(tripId);
-  const allTripStopIds = new Set((trip?.stops || []).map(stopTime => stopTime.stopId).filter(Boolean));
+  const { futureStopIds, nextStopId } = getFutureStopDetailsForTrip(tripId);
 
   Object.keys(stopMarkersByStopId).forEach(stopId => {
     const marker = stopMarkersByStopId[stopId];
@@ -1647,21 +1568,6 @@ function highlightFutureStopMarkersForTrip(tripId) {
         fillColor: "#ffffff",
         fillOpacity: 1,
         opacity: 1
-      });
-      marker.bringToFront();
-      return;
-    }
-
-    if (allTripStopIds.has(stopId)) {
-      // Past/earlier stops on the selected trip still exist on the route. Keep
-      // them visible but quieter so the route does not look like it has gaps.
-      marker.setStyle({
-        radius: 4,
-        color: "#64748b",
-        weight: 1.4,
-        fillColor: "#ffffff",
-        fillOpacity: 0.72,
-        opacity: 0.72
       });
       marker.bringToFront();
       return;
@@ -3764,18 +3670,29 @@ function getScheduleCycleLabel(mode = scheduleCycleMode) {
   return "Today";
 }
 
-function updateScheduleCycleUI(mode = scheduleCycleMode) {
+function updateScheduleCycleUI(mode = scheduleCycleMode, options = {}) {
+  const shouldAnnounce = options.announce !== false;
+
   if (scheduleModeLabel) {
     scheduleModeLabel.textContent = getScheduleCycleLabel(mode);
-    scheduleModeLabel.classList.add("is-visible");
 
     if (scheduleModeLabelHideTimer) {
       window.clearTimeout(scheduleModeLabelHideTimer);
     }
 
-    scheduleModeLabelHideTimer = window.setTimeout(() => {
-      scheduleModeLabel.classList.remove("is-visible");
-    }, 2000);
+    scheduleModeLabel.classList.remove("is-visible");
+
+    if (shouldAnnounce) {
+      // No fade-in: snap visible beside the calendar button, then fade out only.
+      scheduleModeLabel.classList.add("no-fade");
+      scheduleModeLabel.classList.add("is-visible");
+      void scheduleModeLabel.offsetWidth;
+      scheduleModeLabel.classList.remove("no-fade");
+
+      scheduleModeLabelHideTimer = window.setTimeout(() => {
+        scheduleModeLabel.classList.remove("is-visible");
+      }, 2000);
+    }
   }
 
   if (scheduleCycleButton) {
@@ -4054,9 +3971,7 @@ function getMarkerLabelOffset(trip = {}, variant = "live") {
 }
 function shouldCenterServiceChipAtCurrentZoom() {
   const maxZoom = map.getMaxZoom ? map.getMaxZoom() : 19;
-  // GPS locate lands around maxZoom - 4. From that level inward, keep service
-  // chips directly on the road; further out, keep the existing offset spread.
-  return map.getZoom() >= maxZoom - 4;
+  return map.getZoom() >= maxZoom - 2;
 }
 
 function createBusIcon(trip, isSelected = false, variant = "scheduled", delayClass = "on-time") {
@@ -4064,11 +3979,8 @@ function createBusIcon(trip, isSelected = false, variant = "scheduled", delayCla
   const markerLabel = escapeHTML(getTransportLabel(trip));
   const ariaLabel = escapeHTML(getTransportAriaLabel(trip));
   const compact = shouldUseCompactServiceMarker(isSelected);
-  const ghostScheduledDotOnly = trackingMode === "ghost" && variant === "scheduled";
 
-  // In Compare mode, the scheduled/ghost position should be a quiet dot only.
-  // The only visible route number should be the coloured simulated-live marker.
-  if (compact || ghostScheduledDotOnly) {
+  if (compact) {
     const dotClasses = [
       "service-dot-marker",
       `transport-${mode}`,
@@ -4150,7 +4062,6 @@ function getServiceMarkerIconKey(trip, isSelected = false, variant = "scheduled"
     isSelected ? "selected" : "normal",
     compact ? "compact" : "detailed",
     shouldCenterServiceChipAtCurrentZoom() ? "chip-centered" : "chip-offset",
-    trackingMode,
     currentMapTheme
   ].join("|");
 }
@@ -5009,11 +4920,7 @@ function updateBusPositionsLive() {
   clearGhostDelayNetworkLines();
   let ghostDelayLineCount = 0;
 
-  getVisibleVehicleTrips().forEach(rawTrip => {
-    const trip = tripLookupByTripId[rawTrip.tripId]?.stops?.length
-      ? tripLookupByTripId[rawTrip.tripId]
-      : rawTrip;
-
+  getVisibleVehicleTrips().forEach(trip => {
     const scheduledPosition = getVehicleTripPositionNow(trip, currentSeconds);
 
     if (!scheduledPosition) return;
@@ -5477,28 +5384,61 @@ if (scheduleNoticeModal) {
 }
 
 
+// ---------- Map loading overlay ----------
+function startMapLoadingOverlay() {
+  if (!mapLoadingOverlay || !mapLoadingText) return;
+
+  document.body.classList.add("is-loading-data");
+  mapLoadingOverlay.classList.remove("is-hidden", "is-removed");
+
+  let dots = 0;
+  mapLoadingText.textContent = "L O A D I N G";
+
+  if (mapLoadingDotsTimer) {
+    window.clearInterval(mapLoadingDotsTimer);
+  }
+
+  mapLoadingDotsTimer = window.setInterval(() => {
+    dots = (dots + 1) % 4;
+    mapLoadingText.textContent = `L O A D I N G${" .".repeat(dots)}`;
+  }, 420);
+}
+
+function finishMapLoadingOverlay() {
+  if (mapLoadingDotsTimer) {
+    window.clearInterval(mapLoadingDotsTimer);
+    mapLoadingDotsTimer = null;
+  }
+
+  document.body.classList.remove("is-loading-data");
+
+  if (!mapLoadingOverlay) return;
+
+  mapLoadingOverlay.classList.add("is-hidden");
+
+  window.setTimeout(() => {
+    mapLoadingOverlay.classList.add("is-removed");
+  }, 460);
+}
+
 // ---------- App startup ----------
 async function init() {
   updateThemeToggleButton();
-  updateScheduleCycleUI();
+  updateScheduleCycleUI(scheduleCycleMode, { announce: false });
   hideSelectionPanel();
+  startMapLoadingOverlay();
 
-  setAppLoadingText("Loading timetable data…");
   await loadCoreData();
-
-  setAppLoadingText("Loading stops and routes…");
   renderDefaultContextPanel();
   await loadStops();
   applyStopHitAreaStylesForZoom();
   renderJourneyOverlay();
 
-  setAppLoadingText("Drawing active services…");
   map.invalidateSize();
   updateBusPositionsLive();
   setTrackingMode("scheduled");
   updateNetworkLayer();
-
-  hideAppLoadingScreen();
+  finishMapLoadingOverlay();
 
   busUpdateTimerId = window.setInterval(() => {
     if (!isMapMoving) {
@@ -5507,7 +5447,4 @@ async function init() {
   }, VEHICLE_UPDATE_INTERVAL_MS);
 }
 
-init().catch(err => {
-  console.error(err);
-  setAppLoadingText("Could not load map data. Check the console and processed data files.");
-});
+init().catch(err => { finishMapLoadingOverlay(); console.error(err); });

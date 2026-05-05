@@ -20,12 +20,11 @@
   <main>
     <div id="map"></div>
 
-    <div id="appLoadingScreen" class="app-loading-screen" role="status" aria-live="polite">
-      <div class="app-loading-card">
-        <div class="app-loading-spinner" aria-hidden="true"></div>
-        <div class="app-loading-title">Loading Trip Tracker</div>
-        <div id="appLoadingText" class="app-loading-text">Preparing map data…</div>
-      </div>
+    <div id="mapLoadingOverlay" class="map-loading-overlay" aria-live="polite" aria-label="Loading transport data">
+      <div class="map-loading-street map-loading-street-one"></div>
+      <div class="map-loading-street map-loading-street-two"></div>
+      <div class="map-loading-street map-loading-street-three"></div>
+      <div id="mapLoadingText" class="map-loading-text">L O A D I N G</div>
     </div>
 
     <button id="locateUserButton" class="map-round-button locate-button" type="button" aria-label="Use my location to find the nearest stop"><img src="gps_icon.svg" alt="" aria-hidden="true" /></button>
